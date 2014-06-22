@@ -52,31 +52,36 @@ handle_call({move, Snake}, _From, State = #state{map = Map}) ->
 		    Food2 = spawn_food(lists:append([Snake#snake.head,
 						     Snake#snake.tail,
 						     Map#map.walls,
-						     Food])),
-		    Map2 = Map#map{food = Food ++ Food2},
+						     [Next]])),
+		    Map2 = Map#map{food = lists:append(Food, Food2)},
 		    Snake1 = move(eat(Snake)),
 		    if Snake1#snake.score rem 5  == 0 ->
-			    Snake2 = Snake1#snake{speed = max(Snake1#snake.speed - 10, 0)},
-			    io:format("Speed: ~p\n", [Snake2#snake.speed]);
+			    Snake2 = Snake1#snake{speed = max(Snake1#snake.speed - 10, 5)};
 		       true -> Snake2 = Snake1
 		    end;
 		false ->
 		    Snake2 = move(Snake),
 		    Map2 = Map
 	    end,
-	    {reply, {Snake2, Map2}, State#state{map = Map2}};
+	    Snakes = lists:keystore(Snake2#snake.id, #snake.id,
+				    State#state.snakes, Snake2),
+	    {reply, {Snake2, Map2}, State#state{map = Map2,
+						snakes = Snakes}};
 	true ->
 	    {reply, game_over, State#state{}}
     end;
 handle_call(new_game, _From, State=#state{last_id = LastId}) ->
     {Snake, Map} = new_game({?MAP_WIDTH, ?MAP_HEIGHT}, 1),
-    {reply, {Snake#snake{id = LastId}, Map#map{id = LastId}},
+    Snake2 = Snake#snake{id = LastId},
+    {reply, {Snake2, Map#map{id = LastId}},
      State#state{map = Map,
+		 snakes = [Snake2|State#state.snakes],
 		 last_id = LastId+1}};
 handle_call({eat,Snake}, _From, State) ->
     Reply = eat(Snake),
     {reply, Reply, State};
 handle_call({change_dir, SnakeDir, Dir}, _From, State) ->
+
     Reply = case SnakeDir == opposite_dir(Dir) of
 		true -> SnakeDir;
 		false -> Dir
@@ -86,6 +91,10 @@ handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
+handle_cast({disconnect, Id}, State) ->
+    Snakes = lists:keydelete(Id, #snake.id, State#state.snakes),
+    io:format("Snakes: ~p\n", [Snakes]),
+    {noreply, State#state{snakes = Snakes}};
 handle_cast(stop, State) ->
     {stop, shutdown, State};
 handle_cast(_Msg, State) ->

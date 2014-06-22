@@ -67,7 +67,7 @@ init([]) ->
 
     wxMenu:appendSeparator(File),
     wxMenu:append(File, ?wxID_EXIT, "&Quit"),
-    Help    = wxMenu:new([]),
+    Help = wxMenu:new([]),
     wxMenu:append(Help, ?wxID_HELP, "Help"), 
     wxMenu:append(Help, ?wxID_ABOUT, "About"), 
 
@@ -75,25 +75,25 @@ init([]) ->
     wxMenuBar:append(MB, Help, "&Help"),
     wxFrame:setMenuBar(Frame,MB),
 
-    wxFrame:createStatusBar(Frame),
+    wxFrame:createStatusBar(Frame, [{number, 2}]),
 
     wxFrame:centreOnScreen(Frame),
     wxFrame:show(Frame),
 
-    Panel = wxPanel:new(Frame, []),
+
+    %% Panel = wxPanel:new(Frame, []),
     GLAttrib = [{attribList, [?WX_GL_RGBA,?WX_GL_DOUBLEBUFFER,0]}],
-    Canvas = wxGLCanvas:new(Panel, GLAttrib),
+    Canvas = wxGLCanvas:new(Frame, GLAttrib),
+
     wxGLCanvas:update(Canvas),
 
     wxGLCanvas:setCurrent(Canvas),
     wxGLCanvas:setFocus(Canvas),
     init_gl(Canvas),
-    %%io:format("Frame Size: ~p\n", [wxPanel:getSize(Panel)]),
-    %%io:format("Canvas Size: ~p\n", [wxGLCanvas:getSize(Canvas)]),
 
-    Sizer = wxBoxSizer:new(?wxHORIZONTAL),
-    wxSizer:add(Sizer, Canvas, [{proportion, 1},{flag, ?wxEXPAND}]),
-    wxPanel:setSizer(Panel,Sizer),
+    %% Sizer = wxBoxSizer:new(?wxHORIZONTAL),
+    %% wxSizer:add(Sizer, Canvas, [{proportion, 1},{flag, ?wxEXPAND}]),
+    %% wxPanel:setSizer(Panel,Sizer),
     
     wxFrame:connect(Canvas, key_down),
     wxFrame:connect(Frame, close_window, [{skip,true}]),
@@ -110,10 +110,14 @@ init([]) ->
 	    io:format("Highscore: ~p\n", [Highscore]);	
 	{error, enoent} ->
 	    Highscore = 0,
-	    file:write_file("highscore.txt", io_lib:format("{highscore,~p}.", [Highscore])),
+	    file:write_file("highscore.txt", io_lib:format("{highscore,~p}.",
+							   [Highscore])),
 	    io:format("Highscore: ~p\n", [Highscore])	
     end,
 
+    wxFrame:setStatusText(Frame, "Score: 0", [{number, 0}]),
+    wxFrame:setStatusText(Frame, "Speed: 100", [{number, 1}]),
+ 
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
     {Snake, Map} = gen_server:call(snake_server, new_game),
@@ -128,34 +132,45 @@ init([]) ->
     draw(State),
     {Frame, State}.
 
+%%% Resize
 handle_event(#wx{event = #wxSize{size={W,H}}}, State = #state{}) ->
     %%io:format("Canvas Size: w.~p h.~p\n", [W,H]),
     gl_resize(W,H),
     BlockWidth	= W div ?MAP_WIDTH,
     BlockHeight = H div ?MAP_HEIGHT,
     {noreply, State#state{block_size = {BlockWidth, BlockHeight}}};
+
+%%% Change direction
 handle_event(#wx{event = #wxKey{type = key_down,
 				keyCode = Code}},
 	     State=#state{snake = Snake})
   when Code >= 314, Code =< 317 ->
     Dir = gen_server:call(snake_server, {change_dir,
-					 State#state.snake#snake.direction,
+					 Snake#snake.direction,
 					 code_to_dir(Code)}),
     %%io:format("Dir: ~p\n", [Dir]),
     {noreply, State#state{snake = Snake#snake{direction = Dir}}};
-handle_event(#wx{event = #wxKey{type = key_down, keyCode = 32}},
+handle_event(#wx{event = #wxKey{type = key_down, keyCode = $P}},
 	     State= #state{snake = Snake}) ->
     {noreply, State#state{move_timer = toggle_timer(State#state.move_timer,
 						    Snake#snake.speed)}};
+%%% Quit client
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
+    halt(),
     {stop, shutdown, State#state{}};
+
+%%% Restart
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}}, State) ->
     {Snake, Map} = gen_server:call(snake_server, new_game),
     {noreply, State#state{map = Map, snake = Snake,
 			  move_timer = stop_timer(State#state.move_timer)}};
+
+%%% Other key
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = Code}}, State) ->
     io:format("Key down: ~p\n", [Code]),
     {noreply, State};
+
+%%% Close window
 handle_event(#wx{event = #wxClose{}}, State) ->
     {stop, shutdown, State};
 handle_event(#wx{event = #wxPaint{}}, State) ->
@@ -230,14 +245,26 @@ handle_info(move, State = #state{snake = Snake}) ->
 	{Snake2, Map2} ->
 	    MoveTimer = erlang:send_after(Snake2#snake.speed,
 					  self(), move),
-
+	    if Snake2#snake.score > Snake#snake.score ->
+		    ScoreText = io_lib:format("Score: ~p", [Snake2#snake.score]),
+		    wxFrame:setStatusText(State#state.frame, ScoreText, [{number, 0}]);
+	       true ->
+		    ok
+	    end,
+	    if Snake2#snake.speed < Snake#snake.speed ->
+		    SpeedText = io_lib:format("Speed: ~p", [Snake2#snake.speed]),
+		    wxFrame:setStatusText(State#state.frame, SpeedText, [{number, 1}]);
+	       true ->
+		    ok
+	    end,
 	    {noreply, State#state{snake = Snake2,
 				  map = Map2,
 				  move_timer = MoveTimer}}
     end.
 
 
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    gen_server:cast(snake_server, {disconnect, State#state.snake#snake.id}),
     wx:destroy(),
     ok.
 
