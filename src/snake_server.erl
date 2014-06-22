@@ -22,7 +22,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {map, snakes = [], last_id = 0}).
--record(settings, {}).
+%%-record(settings, {}).
 
 %%%===================================================================
 %%% API
