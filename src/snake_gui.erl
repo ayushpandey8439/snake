@@ -122,7 +122,7 @@ init([{node, Node}]) ->
     wxFrame:setStatusText(Frame, "Score: 0", [{number, 0}]),
     wxFrame:setStatusText(Frame, "Speed: 100", [{number, 1}]),
  
-    Size = {FrameW,FrameH} = wxFrame:getVirtualSize(Frame),
+    {FrameW,FrameH} = wxFrame:getVirtualSize(Frame),
     wxGLCanvas:setSize(Canvas, FrameW, FrameH),
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
@@ -161,16 +161,16 @@ handle_event(#wx{event = #wxKey{type = key_down,
     {noreply, State#state{snake = Snake#snake{direction = Dir}}};
 
 %%% Shit
-handle_event(#wx{event = #wxKey{type = key_down, keyCode = 32}},
-	     State= #state{snake = Snake, map = Map}) ->
-    Pos = case Snake#snake.tail of
-	      [] -> lists:last(Snake#snake.head);
-	      _ -> hd(Snake#snake.tail)
-	  end,
-    cast(State#state.node, {shit, Pos}),
-    {noreply, State#state{map = Map#map{walls = [Pos|Map#map.walls]}}};
-
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $P}},
+	     State= #state{snake = Snake, map = Map}) ->
+    _Pos = case Snake#snake.tail of
+	       [] -> lists:last(Snake#snake.head);
+	       _ -> hd(Snake#snake.tail)
+	   end,
+    %%cast(State#state.node, {shit, Pos}),
+    {noreply, State#state{map = Map#map{}}};
+
+handle_event(#wx{event = #wxKey{type = key_down, keyCode = 32}},
 	     State= #state{snake = Snake}) ->
     {noreply, State#state{move_timer = toggle_timer(State#state.move_timer,
 						    Snake#snake.speed)}};
@@ -180,6 +180,7 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
 
 %%% Restart
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}}, State) ->
+    cast(State#state.node, {disconnect, State#state.snake#snake.id}),
     {Snake, Map} = call(State#state.node, new_game),
     {noreply, State#state{map = Map, snake = Snake,
 			  move_timer = stop_timer(State#state.move_timer)}};
@@ -200,6 +201,7 @@ handle_event(#wx{obj = Frame, event = #wxCommand{type = command_menu_selected},
     %%io:format("Command menu ID: ~p\n", [Id]),
     case Id of
     	?wxID_NEW ->
+	    cast(State#state.node, {disconnect, State#state.snake#snake.id}),
 	    {Snake, Map} = call(State#state.node, new_game),
 	    {noreply, State#state{map = Map, snake = Snake}};
     	?wxID_EXIT ->

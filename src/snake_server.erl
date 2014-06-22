@@ -22,6 +22,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {map, snakes = [], last_id = 0}).
+-record(settings, {}).
 
 %%%===================================================================
 %%% API
@@ -82,16 +83,22 @@ handle_call({eat,Snake}, _From, State) ->
     {reply, Reply, State};
 handle_call({change_dir, SnakeId, Dir}, _From, State) ->
     Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
-    Reply = case Snake#snake.direction == opposite_dir(Dir) of
-		true -> Snake#snake.direction;
-		false -> Dir
-	    end,
-    Snake2 = Snake#snake{direction = Reply},
+    NewDir = case Snake#snake.direction == opposite_dir(Dir) of
+		 true ->
+		     Snake#snake.direction;
+		 false ->
+		     Next = calculate_next(Snake),
+		     case get_head(Snake) of
+			 Next -> Snake#snake.direction;
+			 _ -> Dir
+		     end
+	     end,
+    Snake2 = Snake#snake{direction = NewDir},
     State2 = State#state{snakes = lists:keystore(SnakeId,
 						 #snake.id,
 						 State#state.snakes,
 						 Snake2)},
-    {reply, Reply, State2};
+    {reply, NewDir, State2};
 handle_call(Request, _From, State) ->
     io:format("Unhandled call: ~p\n", [Request]),
     {noreply, State}.
