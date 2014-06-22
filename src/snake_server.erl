@@ -22,7 +22,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {map, snakes = [], last_id = 0}).
--record(settings, {}).
+%%-record(settings, {}).
 
 %%%===================================================================
 %%% API
@@ -50,7 +50,8 @@ handle_call({move, Snake}, _From, State = #state{map = Map}) ->
 	    case lists:member(Next, Map#map.food) of
 		true ->
 		    Food = lists:delete(Next, Map#map.food),
-		    Food2 = spawn_food(lists:append([Snake#snake.head,
+		    Food2 = spawn_food(Map#map.size,
+				       lists:append([Snake#snake.head,
 						     Snake#snake.tail,
 						     Map#map.walls,
 						     [Next]])),
@@ -71,8 +72,8 @@ handle_call({move, Snake}, _From, State = #state{map = Map}) ->
 	true ->
 	    {reply, game_over, State#state{}}
     end;
-handle_call(new_game, _From, State=#state{last_id = LastId}) ->
-    {Snake, Map} = new_game({?MAP_WIDTH, ?MAP_HEIGHT}, 1),
+handle_call({new_game,Size}, _From, State=#state{last_id = LastId}) ->
+    {Snake, Map} = new_game(Size, 1),
     Snake2 = Snake#snake{id = LastId},
     {reply, {Snake2, Map#map{}},
      State#state{map = Map,
@@ -151,19 +152,19 @@ calculate_next(Snake = #snake{direction = Direction}) ->
 	right -> {X+1,Y  }
     end.
     
-spawn_food(UnavalibleTiles) ->
-    spawn_food(UnavalibleTiles, 1).
+spawn_food(Size, UnavalibleTiles) ->
+    spawn_food(Size, UnavalibleTiles, 1).
 
-spawn_food(UnavalibleTiles, Num) ->
-    spawn_food(UnavalibleTiles, Num, []).
+spawn_food(Size, UnavalibleTiles, Num) ->
+    spawn_food(Size, UnavalibleTiles, Num, []).
 
-spawn_food(_UnavalibleTiles, 0, Acc) ->
+spawn_food(_Size, _UnavalibleTiles, 0, Acc) ->
     Acc;
-spawn_food(UnavalibleTiles, Num, Acc) ->
-    Pos = {random:uniform(?MAP_WIDTH)-1, random:uniform(?MAP_HEIGHT)-1},
+spawn_food(Size = {Width, Height}, UnavalibleTiles, Num, Acc) ->
+    Pos = {random:uniform(Width)-1, random:uniform(Height)-1},
      case lists:member(Pos, UnavalibleTiles) of
-	 false -> spawn_food([Pos|UnavalibleTiles], Num-1, [Pos|Acc]);
-	 true  -> spawn_food(UnavalibleTiles, Num, Acc)
+	 false -> spawn_food(Size, [Pos|UnavalibleTiles], Num-1, [Pos|Acc]);
+	 true  -> spawn_food(Size, UnavalibleTiles, Num, Acc)
      end.
 
 
@@ -205,9 +206,9 @@ outer_walls(MapWidth, MapHeight,{X, Y}, Acc) ->
 new_game(Size, NumFood) ->
     Map = new_map(Size),
     Snake = #snake{},
-    Food = spawn_food(lists:append([Snake#snake.head,
-				    Snake#snake.tail,
-				    Map#map.walls]), NumFood),
+    Food = spawn_food(Size, lists:append([Snake#snake.head,
+					  Snake#snake.tail,
+					  Map#map.walls]), NumFood),
     {Snake, Map#map{food = Food}}.
 
 new_map(Size) when is_tuple(Size) ->

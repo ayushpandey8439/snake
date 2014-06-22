@@ -127,7 +127,7 @@ init([{node, Node}]) ->
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
 
-    {Snake, Map} = call(Node, new_game),
+    {Snake, Map} = call(Node, {new_game, {30,30}}),
     io:format("Id: ~p\n", [Snake#snake.id]),
 
     {MapWidth, MapHeight} = Map#map.size,
@@ -181,7 +181,7 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
 %%% Restart
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}}, State) ->
     cast(State#state.node, {disconnect, State#state.snake#snake.id}),
-    {Snake, Map} = call(State#state.node, new_game),
+    {Snake, Map} = call(State#state.node, {new_game, {30,30}}),
     {noreply, State#state{map = Map, snake = Snake,
 			  move_timer = stop_timer(State#state.move_timer)}};
 
@@ -202,7 +202,7 @@ handle_event(#wx{obj = Frame, event = #wxCommand{type = command_menu_selected},
     case Id of
     	?wxID_NEW ->
 	    cast(State#state.node, {disconnect, State#state.snake#snake.id}),
-	    {Snake, Map} = call(State#state.node, new_game),
+	    {Snake, Map} = call(State#state.node, {new_game, {30,30}}),
 	    {noreply, State#state{map = Map, snake = Snake}};
     	?wxID_EXIT ->
 	    {stop, shutdown, State};

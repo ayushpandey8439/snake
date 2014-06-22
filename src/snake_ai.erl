@@ -82,7 +82,7 @@ get_food(Map) ->
     #tile{pos = {X,Y}, num = 0}.
 
 test() ->
-    {Snake, Map} = gen_server:call(snake_server, new_game),
+    {Snake, Map} = gen_server:call(snake_server, {new_game, {10,10}}),
     Head = get_head(Snake),
     End = get_food(Map),
     io:format("Head: ~p Food: ~p\n", [Head, End]),
@@ -119,6 +119,8 @@ find_path([Tile | Rest], Goal, UnavalibleTiles, Acc) ->
 	   end,
 
     find_path(lists:append(Rest, NearbyTiles), Goal, UnavalibleTiles, Acc2).
+
+
 
 verify_tiles(List) ->
     verify_tiles(List, []).
