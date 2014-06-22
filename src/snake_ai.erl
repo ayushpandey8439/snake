@@ -40,8 +40,6 @@ start_link() ->
 init([]) ->
     {ok, #state{}}.
 
--define(MOVE_TIME, 200).
-
 handle_call({find_path, Head, Food, UnavalibleTiles}, _From, State) ->
     Reply = find_path(Food, Head, UnavalibleTiles),
     {reply, Reply, State}.
@@ -62,6 +60,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+delete(N, List) ->
+    delete(N, List, []).
+
+delete(_N, [], Acc) -> lists:reverse(Acc);
+delete(N, [#tile{num = N}|Rest], Acc) ->
+    delete(N, Rest, Acc);
+delete(N, [Tile|Rest], Acc) ->
+    delete(N, Rest, [Tile|Acc]).
+
 
 get_head(Snake) ->
     case Snake#snake.head of
@@ -89,7 +97,7 @@ find_path(Start, Stop, UnavalibleTiles) ->
 find_path([], _Goal, _UnavalibleTiles, _Acc) ->
     false;
 find_path([Pos = #tile{pos = {X,Y},num = N}|_], {X,Y}, _UnavalibleTiles, Acc) ->
-    [Pos|lists:keydelete(N, #tile.num, Acc)];
+    [Pos|delete(N, Acc)];
 find_path([Tile | Rest], Goal, UnavalibleTiles, Acc) ->
     Acc2 = case is_wall(Tile, UnavalibleTiles) of
 	       false ->

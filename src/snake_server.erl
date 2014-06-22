@@ -73,34 +73,43 @@ handle_call({move, Snake}, _From, State = #state{map = Map}) ->
 handle_call(new_game, _From, State=#state{last_id = LastId}) ->
     {Snake, Map} = new_game({?MAP_WIDTH, ?MAP_HEIGHT}, 1),
     Snake2 = Snake#snake{id = LastId},
-    {reply, {Snake2, Map#map{id = LastId}},
+    {reply, {Snake2, Map#map{}},
      State#state{map = Map,
 		 snakes = [Snake2|State#state.snakes],
 		 last_id = LastId+1}};
 handle_call({eat,Snake}, _From, State) ->
     Reply = eat(Snake),
     {reply, Reply, State};
-handle_call({change_dir, SnakeDir, Dir}, _From, State) ->
-
-    Reply = case SnakeDir == opposite_dir(Dir) of
-		true -> SnakeDir;
+handle_call({change_dir, SnakeId, Dir}, _From, State) ->
+    Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
+    Reply = case Snake#snake.direction == opposite_dir(Dir) of
+		true -> Snake#snake.direction;
 		false -> Dir
 	    end,
-    {reply, Reply, State};
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+    Snake2 = Snake#snake{direction = Reply},
+    State2 = State#state{snakes = lists:keystore(SnakeId,
+						 #snake.id,
+						 State#state.snakes,
+						 Snake2)},
+    {reply, Reply, State2};
+handle_call(Request, _From, State) ->
+    io:format("Unhandled call: ~p\n", [Request]),
+    {noreply, State}.
 
+handle_cast({shit, Pos}, State = #state{map = Map}) ->
+    {noreply, State#state{map = Map#map{walls = [Pos|Map#map.walls]}}};
 handle_cast({disconnect, Id}, State) ->
     Snakes = lists:keydelete(Id, #snake.id, State#state.snakes),
     io:format("Snakes: ~p\n", [Snakes]),
     {noreply, State#state{snakes = Snakes}};
 handle_cast(stop, State) ->
     {stop, shutdown, State};
-handle_cast(_Msg, State) ->
+handle_cast(Msg, State) ->
+    io:format("Unhandled cast: ~p\n", [Msg]),
     {noreply, State}.
 
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    io:format("Unhandled info: ~p\n", [Info]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->

@@ -21,8 +21,8 @@
 	      walls = []}).
 
 
--define(MAP_WIDTH,	40).
--define(MAP_HEIGHT,	40).
+-define(MAP_WIDTH,	10).
+-define(MAP_HEIGHT,	10).
 
 
 
