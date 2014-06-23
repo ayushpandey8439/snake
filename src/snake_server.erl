@@ -39,9 +39,10 @@ start_link() ->
 %%%===================================================================
 
 init([]) ->
-    {ok, #state{map = new_map({?MAP_WIDTH, ?MAP_HEIGHT})}}.
+    {ok, #state{}}.
 
-handle_call({move, Snake}, _From, State = #state{map = Map}) ->
+handle_call({move, SnakeId}, From, State = #state{map = Map}) ->
+    Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
     Next = calculate_next(Snake),
     case lists:member(Next, lists:append([Snake#snake.head,
 					  Snake#snake.tail,
@@ -55,10 +56,22 @@ handle_call({move, Snake}, _From, State = #state{map = Map}) ->
 						     Snake#snake.tail,
 						     Map#map.walls,
 						     [Next]])),
-		    Map2 = Map#map{food = lists:append(Food, Food2)},
+		    Food3 = lists:append(Food, Food2),
+		    gen_server:cast(element(1,From),
+				    {spawn_food, Food3}),
+
+		    Map2 = Map#map{food = Food3},
+
 		    Snake1 = move(eat(Snake)),
+
+		    gen_server:cast(element(1,From),
+				    {score, Snake1#snake.score}),
+
 		    if Snake1#snake.score rem 5  == 0 ->
-			    Snake2 = Snake1#snake{speed = max(Snake1#snake.speed - 10, 5)};
+			    Speed = max(Snake1#snake.speed - 10, 5),
+			    Snake2 = Snake1#snake{speed = Speed},
+			    gen_server:cast(element(1,From),
+					    {speed, Speed});
 		       true -> Snake2 = Snake1
 		    end;
 		false ->
@@ -67,8 +80,8 @@ handle_call({move, Snake}, _From, State = #state{map = Map}) ->
 	    end,
 	    Snakes = lists:keystore(Snake2#snake.id, #snake.id,
 				    State#state.snakes, Snake2),
-	    {reply, {Snake2, Map2}, State#state{map = Map2,
-						snakes = Snakes}};
+	    {reply, {Snake2}, State#state{map = Map2,
+					  snakes = Snakes}};
 	true ->
 	    {reply, game_over, State#state{}}
     end;

@@ -42,16 +42,18 @@
 
 
 start() ->
-    start(local).
+    start(snake_server).
 
+start(snake_server) ->
+    wx_object:start(?MODULE, [snake_server], []);
 start(Node) ->
-    wx_object:start(?MODULE, [{node, Node}], []).
+    wx_object:start(?MODULE, [{snake_server, Node}], []).
 
 start_link() ->
     wx_object:start_link(?MODULE, [], []).
 
 
-init([{node, Node}]) ->
+init([Node]) ->
     wx:new(),
     Frame = wxFrame:new(wx:null(), ?wxID_ANY, "Snake", [{size, {800,600}}]),
 
@@ -127,7 +129,7 @@ init([{node, Node}]) ->
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
 
-    {Snake, Map} = call(Node, {new_game, {30,30}}),
+    {Snake, Map} = gen_server:call(Node, {new_game, {30,30}}),
     io:format("Id: ~p\n", [Snake#snake.id]),
 
     {MapWidth, MapHeight} = Map#map.size,
@@ -154,7 +156,7 @@ handle_event(#wx{event = #wxKey{type = key_down,
 				keyCode = Code}},
 	     State=#state{snake = Snake})
   when Code >= 314, Code =< 317 ->
-    Dir = call(State#state.node, {change_dir,
+    Dir = gen_server:call(State#state.node, {change_dir,
 				  Snake#snake.id,
 				  code_to_dir(Code)}),
     %%io:format("Dir: ~p\n", [Dir]),
@@ -180,8 +182,8 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
 
 %%% Restart
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}}, State) ->
-    cast(State#state.node, {disconnect, State#state.snake#snake.id}),
-    {Snake, Map} = call(State#state.node, {new_game, {30,30}}),
+    gen_server:cast(State#state.node, {disconnect, State#state.snake#snake.id}),
+    {Snake, Map} = gen_server:call(State#state.node, {new_game, {30,30}}),
     {noreply, State#state{map = Map, snake = Snake,
 			  move_timer = stop_timer(State#state.move_timer)}};
 
@@ -201,8 +203,8 @@ handle_event(#wx{obj = Frame, event = #wxCommand{type = command_menu_selected},
     %%io:format("Command menu ID: ~p\n", [Id]),
     case Id of
     	?wxID_NEW ->
-	    cast(State#state.node, {disconnect, State#state.snake#snake.id}),
-	    {Snake, Map} = call(State#state.node, {new_game, {30,30}}),
+	    gen_server:cast(State#state.node, {disconnect, State#state.snake#snake.id}),
+	    {Snake, Map} = gen_server:call(State#state.node, {new_game, {30,30}}),
 	    {noreply, State#state{map = Map, snake = Snake}};
     	?wxID_EXIT ->
 	    {stop, shutdown, State};
@@ -229,13 +231,31 @@ handle_event(E = #wx{}, State) ->
     {noreply, State}.
 
 
+
+
+
+
 handle_call(Request, _From, State) ->
     io:format("UnHandled call: ~p\n", [Request]),
-    Reply = ok,
-    {reply, Reply, State}.
-
-handle_cast(_Msg, State) ->
     {noreply, State}.
+
+handle_cast({remove_food, Food}, State = #state{map = Map}) ->
+    {noreply, State#state{map = Map#map{food = lists:delete(Food)}}};
+handle_cast({spawn_food, Food}, State = #state{map = Map}) ->
+    {noreply, State#state{map = Map#map{food = Food}}};
+handle_cast({score, Score}, State = #state{snake = Snake}) ->
+    ScoreText = io_lib:format("Score: ~p", [Score]),
+    wxFrame:setStatusText(State#state.frame, ScoreText, [{number, 0}]),
+    {noreply, State#state{snake = Snake#snake{score = Score}}};
+handle_cast({speed, Speed}, State = #state{snake = Snake}) ->
+    SpeedText = io_lib:format("Speed: ~p", [Speed]),
+    wxFrame:setStatusText(State#state.frame, SpeedText, [{number, 1}]),
+    {noreply, State#state{snake = Snake#snake{speed = Speed}}};
+handle_cast(Msg, State) ->
+    io:format("UnHandled cast: ~p\n", [Msg]),
+    {noreply, State}.
+
+
 handle_info({'_egl_error_',_,no_gl_context}, State) ->
     {stop, shutdown, State#state{}};
 handle_info(update, State) ->
@@ -243,7 +263,7 @@ handle_info(update, State) ->
     erlang:send_after(50, self(), update),
     {noreply, State#state{}};
 handle_info(move, State = #state{snake = Snake}) ->
-    case call(State#state.node, {move, Snake}) of
+    case gen_server:call(State#state.node, {move, Snake#snake.id}) of
 	game_over ->
 	    ScoreString = integer_to_list(Snake#snake.score),
 	    Message = "Game Over! Score: " ++ ScoreString,
@@ -264,21 +284,20 @@ handle_info(move, State = #state{snake = Snake}) ->
     	    wxMessageDialog:showModal(Dialog),
 
     	    {noreply, State#state{}};
-	{Snake2, Map2} ->
+	{Snake2} ->
 	    MoveTimer = erlang:send_after(Snake2#snake.speed,
 					  self(), move),
-	    ScoreText = io_lib:format("Score: ~p", [Snake2#snake.score]),
-	    wxFrame:setStatusText(State#state.frame, ScoreText, [{number, 0}]),
-	    SpeedText = io_lib:format("Speed: ~p", [Snake2#snake.speed]),
-	    wxFrame:setStatusText(State#state.frame, SpeedText, [{number, 1}]),
 	    {noreply, State#state{snake = Snake2,
-				  map = Map2,
 				  move_timer = MoveTimer}}
-    end.
+    end;
+handle_info(Msg, State) ->
+    io:format("Unhandled message: ~p\n", [Msg]),
+    {noreply, State}.
+
 
 
 terminate(_Reason, State) ->
-    cast(State#state.node, {disconnect, State#state.snake#snake.id}),
+    gen_server:cast(State#state.node, {disconnect, State#state.snake#snake.id}),
     wx:destroy(),
     ok.
 
@@ -288,17 +307,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
-call(local, Message) ->
-    gen_server:call(snake_server, Message);
-call(Node, Message) ->
-    gen_server:call({snake_server, Node}, Message).
-
-cast(local, Message) ->
-    gen_server:cast(snake_server, Message);
-cast(Node, Message) ->
-    gen_server:cast({snake_server, Node}, Message).
-
 
 
 code_to_dir(314) -> left;

@@ -108,8 +108,10 @@ find_path([Tile | Rest], Goal, UnavalibleTiles, Acc) ->
 			   [Tile|Acc];
 		       Tuple ->
 			   if Tuple#tile.num >= Tile#tile.num ->
+				   %%io:format("Tuple: ~p ~p\n", [Tuple, Tile]),
 				   lists:delete(Tuple, Acc);
 			      true ->
+				   %%io:format("Tile: ~p ~p\n", [Tile, Tuple]),
 				   lists:delete(Tile, Acc)
 			   end
 		   end;
@@ -135,11 +137,9 @@ verify_tiles([Tile = #tile{pos = {X,Y}}|Rest], Acc) ->
        true -> verify_tiles(Rest, [Tile|Acc])
     end.	    
 
-nearby_tiles(#tile{pos = {X,Y}, num = Num}) ->
-    Tiles = [#tile{pos = {X+1,Y}, num = Num+1},
-	      #tile{pos = {X-1,Y}, num = Num+1},
-	      #tile{pos = {X,Y+1}, num = Num+1},
-	      #tile{pos = {X,Y-1}, num = Num+1}],
+nearby_tiles(#tile{pos = Pos, num = Num}) ->
+    Tiles = lists:map(fun(Tile) -> Tile#tile{num = Num+1} end,
+		      neighbours(Pos)),
     verify_tiles(Tiles).
 
 neighbours({X,Y}) ->
