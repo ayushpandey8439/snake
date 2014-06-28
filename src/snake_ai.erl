@@ -11,10 +11,10 @@
 -behaviour(gen_server).
 
 -include("snake.hrl").
--compile(export_all).
 
 %% API
 -export([start_link/0]).
+-export([test/0,test/1, find_path/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -22,9 +22,9 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {map, snake, move_timer}).
+-record(state, {map, snake, path, move_timer}).
 
--record(tile, {pos, num = 0}).
+-record(tile, {pos, num = 0, parent}).
 
 %%%===================================================================
 %%% API
@@ -40,14 +40,25 @@ start_link() ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call({find_path, Head, Food, UnavalibleTiles}, _From, State) ->
-    Reply = find_path(Food, Head, UnavalibleTiles),
-    {reply, Reply, State}.
+handle_call({find_path, Snake, Map}, _From, State) ->
+    UnavalibleTiles = lists:append([Snake#snake.head,
+				    Snake#snake.tail,
+				    Map#map.walls]),
+    Reply = find_path([#tile{pos = hd(Map#map.food)}], get_head(Snake), UnavalibleTiles),
+    {reply, Reply, State#state{path = Reply,
+			       snake = Snake,
+			       map = Map}}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 
+handle_info(move, State = #state{path = []}) ->
+    io:format("Path empty.\n"),
+    gen_server:call(snake_ai, {find_path, State#state.snake, State#state.map}),
+    {noreply, State};
+handle_info(move, State) ->
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -61,16 +72,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-delete(N, List) ->
-    delete(N, List, []).
-
-delete(_N, [], Acc) -> lists:reverse(Acc);
-delete(N, [#tile{num = N}|Rest], Acc) ->
-    delete(N, Rest, Acc);
-delete(N, [Tile|Rest], Acc) ->
-    delete(N, Rest, [Tile|Acc]).
-
-
 get_head(Snake) ->
     case Snake#snake.head of
 	[] -> lists:last(Snake#snake.tail);
@@ -82,75 +83,58 @@ get_food(Map) ->
     #tile{pos = {X,Y}, num = 0}.
 
 test() ->
-    {Snake, Map} = gen_server:call(snake_server, {new_game, {10,10}}),
-    Head = get_head(Snake),
+    test({7,5}).
+
+test(Food) ->
+    Size = {30,30},
+    Map = #map{size = Size,
+	       food = [Food],
+	       walls = snake_server:outer_walls(Size)},
+    %%io:format("Map: ~p\n", [Map]),
+    Head = {4,5},
     End = get_food(Map),
     io:format("Head: ~p Food: ~p\n", [Head, End]),
     UnavalibleTiles = Map#map.walls,
     %%io:format("UnavalibleTiles: ~p\n", [UnavalibleTiles]),
-    Tiles = find_path(End, Head, UnavalibleTiles),
+    Tiles = find_path([End], Head, UnavalibleTiles),
+    %%io:format("Tiles: ~p\n", [Tiles]).
     Tiles.
 
-find_path(Start, Stop, UnavalibleTiles) ->
-    find_path([Start], Stop, UnavalibleTiles, []).
-
-find_path([], _Goal, _UnavalibleTiles, _Acc) ->
-    false;
-find_path([Pos = #tile{pos = {X,Y},num = N}|_], {X,Y}, _UnavalibleTiles, Acc) ->
-    [Pos|delete(N, Acc)];
-find_path([Tile | Rest], Goal, UnavalibleTiles, Acc) ->
-    Acc2 = case is_wall(Tile, UnavalibleTiles) of
-	       false ->
-		   NearbyTiles = nearby_tiles(Tile),
-		   case lists:keyfind(Tile#tile.pos, #tile.pos, Acc) of
-		       false -> 
-			   %%io:format("Tile: ~p\n", [Tile]),
-			   [Tile|Acc];
-		       Tuple ->
-			   if Tuple#tile.num >= Tile#tile.num ->
-				   %%io:format("Tuple: ~p ~p\n", [Tuple, Tile]),
-				   lists:delete(Tuple, Acc);
-			      true ->
-				   %%io:format("Tile: ~p ~p\n", [Tile, Tuple]),
-				   lists:delete(Tile, Acc)
-			   end
-		   end;
-	       true ->
-		   NearbyTiles = [],
-		   Acc
-	   end,
-
-    find_path(lists:append(Rest, NearbyTiles), Goal, UnavalibleTiles, Acc2).
-
-
-
-verify_tiles(List) ->
-    verify_tiles(List, []).
-
-verify_tiles([], Acc) ->
-    (Acc);
-verify_tiles([Tile = #tile{pos = {X,Y}}|Rest], Acc) ->
-    if X >= ?MAP_WIDTH -> verify_tiles(Rest, Acc);
-       X < 0 -> verify_tiles(Rest, Acc);
-       Y >= ?MAP_HEIGHT -> verify_tiles(Rest, Acc);
-       Y < 0 -> verify_tiles(Rest, Acc);
-       true -> verify_tiles(Rest, [Tile|Acc])
-    end.	    
-
-nearby_tiles(#tile{pos = Pos, num = Num}) ->
-    Tiles = lists:map(fun(Tile) -> Tile#tile{num = Num+1} end,
-		      neighbours(Pos)),
-    verify_tiles(Tiles).
-
-neighbours({X,Y}) ->
-    [#tile{pos = {X+1,Y}},
-     #tile{pos = {X-1,Y}},
-     #tile{pos = {X,Y+1}},
-     #tile{pos = {X,Y-1}}].
     
 
+
+find_path([Pos = #tile{pos = {X,Y},num = _N}|_Rest], {X,Y}, _UnavalibleTiles) ->
+    %%io:format("Rest: ~p\n", [_Rest]),
+    to_list(Pos#tile.parent);
+find_path([Tile | Rest], Goal, UnavalibleTiles) ->
+    case is_wall(Tile, UnavalibleTiles) of
+	false ->
+	    NearbyTiles = nearby_tiles(Tile);
+	true ->
+	    %%io:format("NoNearby:\n"),
+	    NearbyTiles = []
+    end,
+    find_path(Rest ++ NearbyTiles, Goal, UnavalibleTiles);
+find_path([], _Goal, _UnavalibleTiles) ->
+    false.
+
+
+nearby_tiles(Tile = #tile{pos = {X,Y}, num = Num}) ->
+    [#tile{pos = {X+1,Y}, num = Num+1, parent = Tile},
+     #tile{pos = {X-1,Y}, num = Num+1, parent = Tile},
+     #tile{pos = {X,Y+1}, num = Num+1, parent = Tile},
+     #tile{pos = {X,Y-1}, num = Num+1, parent = Tile}].
+
 is_wall(#tile{pos = Pos}, UnavalibleTiles) ->
-    lists:keymember(Pos, #tile.pos, UnavalibleTiles).
+    lists:member(Pos, UnavalibleTiles).
 
 
+to_list(Tile) ->
+    lists:reverse(to_list(Tile, [])).
+
+to_list(#tile{pos = Pos, parent = undefined}, Acc) ->
+    [Pos|Acc];
+to_list(#tile{pos = Pos, parent = Parent}, Acc) ->
+    to_list(Parent, [Pos|Acc]).
+    
 

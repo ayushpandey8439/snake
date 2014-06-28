@@ -23,7 +23,7 @@
 	 terminate/2, code_change/3, handle_event/2]).
 
 
--record(settings, {show_grid = true}).
+-record(settings, {show_grid = true, ai = false, size = {10,10}}).
 
 -record(state, {frame,
 		canvas,
@@ -129,12 +129,10 @@ init([Node]) ->
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
 
-    {Snake, Map} = gen_server:call(Node, {new_game, {30,30}}),
-    io:format("Id: ~p\n", [Snake#snake.id]),
+    {Snake, Map} = gen_server:call(Node, {new_game, {10,10}}),
+    BlockWidth	= W div ?MAP_WIDTH,
+    BlockHeight = H div ?MAP_HEIGHT,
 
-    {MapWidth, MapHeight} = Map#map.size,
-    BlockWidth	= W div MapWidth,
-    BlockHeight = H div MapHeight,
     State = #state{frame = Frame, canvas = Canvas,
 		   snake = Snake,
 		   map = Map,
@@ -181,9 +179,11 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
     {stop, shutdown, State#state{}};
 
 %%% Restart
-handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}}, State) ->
-    gen_server:cast(State#state.node, {disconnect, State#state.snake#snake.id}),
-    {Snake, Map} = gen_server:call(State#state.node, {new_game, {30,30}}),
+handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}},
+	     State = #state{settings = Settings}) ->
+    disconnect(State#state.node, State#state.snake),
+    {Snake, Map} = gen_server:call(State#state.node,
+				   {new_game, Settings#settings.size}),
     {noreply, State#state{map = Map, snake = Snake,
 			  move_timer = stop_timer(State#state.move_timer)}};
 
@@ -203,8 +203,8 @@ handle_event(#wx{obj = Frame, event = #wxCommand{type = command_menu_selected},
     %%io:format("Command menu ID: ~p\n", [Id]),
     case Id of
     	?wxID_NEW ->
-	    gen_server:cast(State#state.node, {disconnect, State#state.snake#snake.id}),
-	    {Snake, Map} = gen_server:call(State#state.node, {new_game, {30,30}}),
+	    disconnect(State#state.node, State#state.snake),
+ 	    {Snake, Map} = gen_server:call(State#state.node, {new_game, {30,30}}),
 	    {noreply, State#state{map = Map, snake = Snake}};
     	?wxID_EXIT ->
 	    {stop, shutdown, State};
@@ -219,9 +219,9 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 	    Checked = wxMenuItem:isChecked(wxMenu:findItem(Obj, Id)),
 	    {noreply, State#state{settings = Settings#settings{show_grid = Checked}}};
 	"Start AI" ->
-	    %%gen_server:call(snake_ai, start),
 	    io:format("Start AI.\n"),
-	    {noreply, State#state{}};
+
+	    {noreply, State#state{settings = Settings#settings{ai = true}}};
 	Label ->
 	    io:format("Label: ~p\n", [Label]),
 	    {noreply, State}
@@ -284,12 +284,15 @@ handle_info(move, State = #state{snake = Snake}) ->
     	    wxMessageDialog:showModal(Dialog),
 
     	    {noreply, State#state{}};
-	{Snake2} ->
+	Snake2 = #snake{} ->
 	    MoveTimer = erlang:send_after(Snake2#snake.speed,
 					  self(), move),
 	    {noreply, State#state{snake = Snake2,
 				  move_timer = MoveTimer}}
     end;
+handle_info(ai_move, State) ->
+    io:format("AI move\n", []),
+    {noreply, State};
 handle_info(Msg, State) ->
     io:format("Unhandled message: ~p\n", [Msg]),
     {noreply, State}.
@@ -297,7 +300,12 @@ handle_info(Msg, State) ->
 
 
 terminate(_Reason, State) ->
-    gen_server:cast(State#state.node, {disconnect, State#state.snake#snake.id}),
+    case State#state.snake of
+	undefined ->
+	    ok;
+	Snake ->
+	    disconnect(State#state.node, Snake)
+    end,
     wx:destroy(),
     ok.
 
@@ -307,6 +315,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+disconnect(_Node, undefined) ->
+    ok;
+disconnect(Node, Snake) ->
+    gen_server:cast(Node, {disconnect, Snake#snake.id}).
 
 
 code_to_dir(314) -> left;
@@ -343,19 +356,29 @@ gl_resize(W,H) ->
 %% ================================================================
 %% Draw functions
 %% ================================================================
-draw(State=#state{map = Map, settings = Settings, block_size = BlockSize}) ->
+draw(State=#state{snake = Snake, map = Map,
+		  settings = Settings, block_size = BlockSize}) ->
     gl:clear(?GL_COLOR_BUFFER_BIT),
     draw_map(Map, BlockSize),
-    draw_snake(State#state.snake, BlockSize),
+    draw_snake(Snake, BlockSize),
     case Settings#settings.show_grid of
 	true ->
 	    draw_grid(BlockSize);
 	false ->
 	    ok
     end,
+    case Settings#settings.ai of
+	true ->
+	    Path = gen_server:call(snake_ai, {find_path, Snake, Map}),
+	    draw_ai(Path, BlockSize);
+	false ->
+	    ok
+    end,
     wxGLCanvas:swapBuffers(State#state.canvas).
     
 
+draw_map(undefined, _) ->
+    ok;
 draw_map(#map{food = Food, walls = Walls}, {Width, Height}) ->
     FunMap = fun({X,Y}) -> 
 		     graphics:rectangle(X*Width,Y*Height,Width,Height)
@@ -371,6 +394,8 @@ draw_map(#map{food = Food, walls = Walls}, {Width, Height}) ->
     ok.
 
 
+draw_snake(undefined, _) ->
+    ok;
 draw_snake(#snake{head = Head, tail = Tail}, {Width,Height}) ->
     gl:color4ub(255,0,255,50),
     Fun = fun({X,Y}) ->
@@ -391,6 +416,17 @@ draw_grid({Width, Height}) ->
     gl:'begin'(?GL_LINES),
     wx:foreach(FunX, lists:seq(0,?MAP_WIDTH)),
     wx:foreach(FunY, lists:seq(0,?MAP_HEIGHT)),
+    gl:'end'(),
+
+    ok.
+
+draw_ai(List, {Width,Height}) ->
+    gl:color4ub(0,0,255,100),
+    Fun = fun({X,Y}) ->
+		     graphics:rectangle(X*Width,Y*Height,Width,Height)
+	  end,
+    gl:'begin'(?GL_QUADS),
+    wx:foreach(Fun, List),
     gl:'end'(),
 
     ok.

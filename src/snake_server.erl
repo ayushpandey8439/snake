@@ -13,7 +13,7 @@
 
 
 %% API
--export([start/0,start_link/0]).
+-export([start/0,start_link/0, outer_walls/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -80,7 +80,7 @@ handle_call({move, SnakeId}, From, State = #state{map = Map}) ->
 	    end,
 	    Snakes = lists:keystore(Snake2#snake.id, #snake.id,
 				    State#state.snakes, Snake2),
-	    {reply, {Snake2}, State#state{map = Map2,
+	    {reply, Snake2, State#state{map = Map2,
 					  snakes = Snakes}};
 	true ->
 	    {reply, game_over, State#state{}}
@@ -92,7 +92,8 @@ handle_call({new_game,Size}, _From, State=#state{last_id = LastId}) ->
      State#state{map = Map,
 		 snakes = [Snake2|State#state.snakes],
 		 last_id = LastId+1}};
-handle_call({eat,Snake}, _From, State) ->
+handle_call({eat, SnakeId}, _From, State) ->
+    Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
     Reply = eat(Snake),
     {reply, Reply, State};
 handle_call({change_dir, SnakeId, Dir}, _From, State) ->
