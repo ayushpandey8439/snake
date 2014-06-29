@@ -14,7 +14,7 @@
 
 %% API
 -export([start_link/0]).
--export([test/0,test/1, find_path/3]).
+-export([test/0,test/1, find_path/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -40,29 +40,28 @@ start_link() ->
 init([]) ->
     {ok, #state{}}.
 
+handle_call(move, _From, State = #state{snake = Snake, map = Map, path = []}) ->
+    io:format("Path empty.\n"),
+    Path = find_path(Snake, Map),
+    {noreply, State#state{path = Path}};
+handle_call(move, _From, State = #state{}) ->
+    {noreply, State};
 handle_call({find_path, Snake, Map}, _From, State) ->
-    UnavalibleTiles = lists:append([Snake#snake.head,
-				    Snake#snake.tail,
-				    Map#map.walls]),
-    Reply = find_path([#tile{pos = hd(Map#map.food)}], get_head(Snake), UnavalibleTiles),
-    {reply, Reply, State#state{path = Reply,
-			       snake = Snake,
-			       map = Map}}.
+    Path = find_path(Snake, Map),
+    {reply, Path, State#state{path = Path,
+			      snake = Snake,
+			      map = Map}}.
 
 handle_cast(start, State) ->
     {Snake, Map} = gen_server:call(snake_server, {new_game, {10,10}}),
+    Path = gen_server:call(snake_ai, {find_path, Snake, Map}),
     {noreply, State#state{snake = Snake,
-			  map = Map}};
+			  map = Map,
+			  path = Path}};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 
-handle_info(move, State = #state{path = []}) ->
-    io:format("Path empty.\n"),
-    Path = gen_server:call(snake_ai, {find_path, State#state.snake, State#state.map}),
-    {noreply, State#state{path = Path}};
-handle_info(move, State) ->
-    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -105,6 +104,11 @@ test(Food) ->
     Tiles.
 
     
+find_path(Snake = #snake{head = Head, tail = Tail}, #map{walls = Walls, food = Food}) ->
+    UnavalibleTiles = lists:append([Head,
+				    Tail,
+				    Walls]),
+    find_path([#tile{pos = hd(Food)}], get_head(Snake), UnavalibleTiles).
 
 
 find_path([Pos = #tile{pos = {X,Y},num = _N}|_Rest], {X,Y}, _UnavalibleTiles) ->
