@@ -49,14 +49,18 @@ handle_call({find_path, Snake, Map}, _From, State) ->
 			       snake = Snake,
 			       map = Map}}.
 
+handle_cast(start, State) ->
+    {Snake, Map} = gen_server:call(snake_server, {new_game, {10,10}}),
+    {noreply, State#state{snake = Snake,
+			  map = Map}};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 
 handle_info(move, State = #state{path = []}) ->
     io:format("Path empty.\n"),
-    gen_server:call(snake_ai, {find_path, State#state.snake, State#state.map}),
-    {noreply, State};
+    Path = gen_server:call(snake_ai, {find_path, State#state.snake, State#state.map}),
+    {noreply, State#state{path = Path}};
 handle_info(move, State) ->
     {noreply, State};
 handle_info(_Info, State) ->

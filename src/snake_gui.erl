@@ -23,7 +23,7 @@
 	 terminate/2, code_change/3, handle_event/2]).
 
 
--record(settings, {show_grid = true, ai = false, size = {10,10}}).
+-record(settings, {show_grid = true, ai, size = {10,10}}).
 
 -record(state, {frame,
 		canvas,
@@ -129,13 +129,13 @@ init([Node]) ->
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
 
-    {Snake, Map} = gen_server:call(Node, {new_game, {10,10}}),
+    %%{Snake, Map} = gen_server:call(Node, {new_game, {10,10}}),
     BlockWidth	= W div ?MAP_WIDTH,
     BlockHeight = H div ?MAP_HEIGHT,
 
     State = #state{frame = Frame, canvas = Canvas,
-		   snake = Snake,
-		   map = Map,
+		   %%snake = Snake,
+		   %%map = Map,
 		   block_size = {BlockWidth,BlockHeight},
 		   node = Node},
     draw(State),
@@ -171,12 +171,26 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $P}},
     {noreply, State#state{map = Map#map{}}};
 
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = 32}},
-	     State= #state{snake = Snake}) ->
-    {noreply, State#state{move_timer = toggle_timer(State#state.move_timer,
-						    Snake#snake.speed)}};
+	     State= #state{settings = Settings, snake = Snake}) ->
+    case Settings#settings.ai of
+	false ->
+	    {noreply, State#state{move_timer = toggle_timer(State#state.move_timer,
+							    Snake#snake.speed)}};
+	_ ->
+	    {noreply, State#state{move_timer = toggle_timer(State#state.move_timer,
+							    Snake#snake.speed)}}
+    end;
+
 %%% Quit client
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
     {stop, shutdown, State#state{}};
+
+%%% Clear client
+handle_event(#wx{event = #wxKey{type = key_down, keyCode = $C}}, State = #state{settings = Settings}) ->
+    disconnect(State#state.node, State#state.snake),
+    {noreply, State#state{map = undefined,
+			  snake = undefined,
+			  settings = Settings#settings{ai = undefined}}};
 
 %%% Restart
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}},
@@ -184,7 +198,16 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}},
     disconnect(State#state.node, State#state.snake),
     {Snake, Map} = gen_server:call(State#state.node,
 				   {new_game, Settings#settings.size}),
+    case Settings#settings.ai of
+	undefined ->
+	    Path = undefined;
+	_ ->
+	    Path = gen_server:call(snake_ai, {find_path,
+					      Snake,
+					      Map})
+    end,
     {noreply, State#state{map = Map, snake = Snake,
+			  settings = Settings#settings{ai = Path},
 			  move_timer = stop_timer(State#state.move_timer)}};
 
 %%% Other key
@@ -220,8 +243,11 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 	    {noreply, State#state{settings = Settings#settings{show_grid = Checked}}};
 	"Start AI" ->
 	    io:format("Start AI.\n"),
+	    Path = gen_server:call(snake_ai, {find_path,
+					      State#state.snake,
+					      State#state.map}),
 
-	    {noreply, State#state{settings = Settings#settings{ai = true}}};
+	    {noreply, State#state{settings = Settings#settings{ai = Path}}};
 	Label ->
 	    io:format("Label: ~p\n", [Label]),
 	    {noreply, State}
@@ -368,11 +394,10 @@ draw(State=#state{snake = Snake, map = Map,
 	    ok
     end,
     case Settings#settings.ai of
-	true ->
-	    Path = gen_server:call(snake_ai, {find_path, Snake, Map}),
-	    draw_ai(Path, BlockSize);
-	false ->
-	    ok
+	undefined ->
+	    ok;
+	Path ->
+	    draw_ai(Path, BlockSize)
     end,
     wxGLCanvas:swapBuffers(State#state.canvas).
     
