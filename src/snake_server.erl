@@ -39,6 +39,7 @@ start_link() ->
 %%%===================================================================
 
 init([]) ->
+    random:seed(now()),
     {ok, #state{}}.
 
 handle_call({move, SnakeId}, From, State = #state{map = Map}) ->
