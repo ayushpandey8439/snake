@@ -40,29 +40,45 @@ start_link() ->
 init([]) ->
     {ok, #state{}}.
 
+handle_call(start, _From, State) ->
+    {Snake, Map} = gen_server:call(snake_server, {new_game, {10,10}}),
+    Path = find_path(Snake, Map),
+    Reply = {Snake, Map, Path},
+    {reply, Reply, State#state{snake = Snake,
+			       map = Map,
+			       path = Path}};
 handle_call(move, _From, State = #state{snake = Snake, map = Map, path = []}) ->
     io:format("Path empty.\n"),
     Path = find_path(Snake, Map),
     {noreply, State#state{path = Path}};
 handle_call(move, _From, State = #state{}) ->
+
     {noreply, State};
 handle_call({find_path, Snake, Map}, _From, State) ->
     Path = find_path(Snake, Map),
     {reply, Path, State#state{path = Path,
 			      snake = Snake,
-			      map = Map}}.
-
-handle_cast(start, State) ->
-    {Snake, Map} = gen_server:call(snake_server, {new_game, {10,10}}),
-    Path = gen_server:call(snake_ai, {find_path, Snake, Map}),
-    {noreply, State#state{snake = Snake,
-			  map = Map,
-			  path = Path}};
-handle_cast(_Msg, State) ->
+			      map = Map}};
+handle_call(Request, _From, State) ->
+    io:format("~p: UnHandled call: ~p\n", [?MODULE,Request]),
     {noreply, State}.
 
 
-handle_info(_Info, State) ->
+handle_cast({remove_food, Food}, State = #state{map = Map}) ->
+    {noreply, State#state{map = Map#map{food = lists:delete(Food)}}};
+handle_cast({spawn_food, Food}, State = #state{map = Map}) ->
+    {noreply, State#state{map = Map#map{food = Food}}};
+handle_cast({score, Score}, State = #state{snake = Snake}) ->
+    {noreply, State#state{snake = Snake#snake{score = Score}}};
+handle_cast({speed, Speed}, State = #state{snake = Snake}) ->
+    {noreply, State#state{snake = Snake#snake{speed = Speed}}};
+handle_cast(Msg, State) ->
+    io:format("~p: UnHandled cast: ~p\n", [?MODULE,Msg]),
+    {noreply, State}.
+
+
+handle_info(Info, State) ->
+    io:format("~p: UnHandled info: ~p\n", [?MODULE,Info]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->

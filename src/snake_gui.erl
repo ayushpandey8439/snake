@@ -243,11 +243,16 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 	    {noreply, State#state{settings = Settings#settings{show_grid = Checked}}};
 	"Start AI" ->
 	    io:format("Start AI.\n"),
-	    Path = gen_server:call(snake_ai, {find_path,
-					      State#state.snake,
-					      State#state.map}),
-
-	    {noreply, State#state{settings = Settings#settings{ai = Path}}};
+	    disconnect(State#state.node, State#state.snake),
+	    {Snake, Map, Path} = gen_server:call(snake_ai, start),
+	    MoveTimer = erlang:send_after(Snake#snake.speed,
+					  self(), ai_move),
+	    
+	    gen_server:cast(self(), {speed, 500}),
+	    {noreply, State#state{snake = Snake,
+				  map = Map,
+				  move_timer = MoveTimer,
+				  settings = Settings#settings{ai = Path}}};
 	Label ->
 	    io:format("Label: ~p\n", [Label]),
 	    {noreply, State}
@@ -262,7 +267,7 @@ handle_event(E = #wx{}, State) ->
 
 
 handle_call(Request, _From, State) ->
-    io:format("UnHandled call: ~p\n", [Request]),
+    io:format("~p: UnHandled call: ~p\n", [?MODULE,Request]),
     {noreply, State}.
 
 handle_cast({remove_food, Food}, State = #state{map = Map}) ->
@@ -278,7 +283,7 @@ handle_cast({speed, Speed}, State = #state{snake = Snake}) ->
     wxFrame:setStatusText(State#state.frame, SpeedText, [{number, 1}]),
     {noreply, State#state{snake = Snake#snake{speed = Speed}}};
 handle_cast(Msg, State) ->
-    io:format("UnHandled cast: ~p\n", [Msg]),
+    io:format("~p: UnHandled cast: ~p\n", [?MODULE,Msg]),
     {noreply, State}.
 
 
@@ -316,9 +321,11 @@ handle_info(move, State = #state{snake = Snake}) ->
 	    {noreply, State#state{snake = Snake2,
 				  move_timer = MoveTimer}}
     end;
-handle_info(ai_move, State) ->
+handle_info(ai_move, State = #state{snake = Snake}) ->
     io:format("AI move\n", []),
-    {noreply, State};
+    MoveTimer = erlang:send_after(Snake#snake.speed,
+				  self(), ai_move),
+    {noreply, State#state{move_timer = MoveTimer}};
 handle_info(Msg, State) ->
     io:format("Unhandled message: ~p\n", [Msg]),
     {noreply, State}.
