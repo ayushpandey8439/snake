@@ -133,7 +133,15 @@ find_path([Pos = #tile{pos = {X,Y},num = _N}|_Rest], {X,Y}, _UnavalibleTiles) ->
 find_path([Tile | Rest], Goal, UnavalibleTiles) ->
     case is_wall(Tile, UnavalibleTiles) of
 	false ->
-	    NearbyTiles = nearby_tiles(Tile);
+	    Fun = fun(T, A) ->
+			  case lists:keymember(T#tile.pos, #tile.pos, Rest) of
+			      true ->
+				  A;
+			      false ->
+				  [T|A]
+			  end
+		  end,
+	    NearbyTiles = lists:foldl(Fun, [], nearby_tiles(Tile));
 	true ->
 	    %%io:format("NoNearby:\n"),
 	    NearbyTiles = []
