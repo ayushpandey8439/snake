@@ -11,6 +11,7 @@
 -behaviour(gen_server).
 
 -include("snake.hrl").
+-compile(export_all).
 
 %% API
 -export([start_link/0]).
@@ -22,7 +23,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {map, snake, path, move_timer}).
+-record(state, {gui, map, snake, path, move_timer}).
 
 -record(tile, {pos, num = 0, parent}).
 
@@ -40,20 +41,30 @@ start_link() ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call(start, _From, State) ->
-    {Snake, Map} = gen_server:call(snake_server, {new_game, {10,10}}),
+handle_call(start, From, State) ->
+    {Snake, Map} = gen_server:call(snake_server, {new_game, {30,30}}),
     Path = find_path(Snake, Map),
     Reply = {Snake, Map, Path},
     {reply, Reply, State#state{snake = Snake,
 			       map = Map,
+			       gui = element(1, From),
 			       path = Path}};
 handle_call(move, _From, State = #state{snake = Snake, map = Map, path = []}) ->
-    io:format("Path empty.\n"),
+    io:format("Path empty. ~p\n", [Map#map.food]),
     Path = find_path(Snake, Map),
-    {noreply, State#state{path = Path}};
-handle_call(move, _From, State = #state{}) ->
-
-    {noreply, State};
+    case move(Snake, Path) of
+	game_over ->
+	    {reply, game_over, State#state{}};
+	Snake2 = #snake{} ->
+	    {reply, {Snake2, Path}, State#state{snake = Snake2, path = Path}}
+    end;
+handle_call(move, _From, State = #state{snake = Snake, path = Path}) ->
+    case move(Snake, Path) of
+	game_over ->
+	    {reply, game_over, State#state{}};
+	Snake2 = #snake{} ->
+	    {reply, {Snake2, tl(Path)}, State#state{snake = Snake2, path = tl(Path)}}
+    end;
 handle_call({find_path, Snake, Map}, _From, State) ->
     Path = find_path(Snake, Map),
     {reply, Path, State#state{path = Path,
@@ -65,12 +76,18 @@ handle_call(Request, _From, State) ->
 
 
 handle_cast({remove_food, Food}, State = #state{map = Map}) ->
+    io:format("Eat: ~p\n", [Food]),
+    gen_server:cast(State#state.gui, {remove_food, Food}),
     {noreply, State#state{map = Map#map{food = lists:delete(Food)}}};
 handle_cast({spawn_food, Food}, State = #state{map = Map}) ->
+    io:format("Eat2: ~p\n", [Food]),
+    gen_server:cast(State#state.gui, {spawn_food, Food}),
     {noreply, State#state{map = Map#map{food = Food}}};
 handle_cast({score, Score}, State = #state{snake = Snake}) ->
+    gen_server:cast(State#state.gui, {score, Score}),
     {noreply, State#state{snake = Snake#snake{score = Score}}};
 handle_cast({speed, Speed}, State = #state{snake = Snake}) ->
+    gen_server:cast(State#state.gui, {speed, Speed}),
     {noreply, State#state{snake = Snake#snake{speed = Speed}}};
 handle_cast(Msg, State) ->
     io:format("~p: UnHandled cast: ~p\n", [?MODULE,Msg]),
@@ -91,15 +108,34 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-get_head(Snake) ->
-    case Snake#snake.head of
-	[] -> lists:last(Snake#snake.tail);
-	_  -> hd(Snake#snake.head)
-    end.
-
 get_food(Map) ->
     {X,Y} = hd(Map#map.food),
     #tile{pos = {X,Y}, num = 0}.
+
+move(Snake, Path) ->
+    Next = snake_server:calculate_next(Snake),
+    if hd(Path) == Next ->
+	    Dir = Snake#snake.direction,
+	    io:format("Dir: ~p\n", [Dir]);
+       true ->
+	    Dir0 = get_dir(hd(Path), Next),
+	    Dir = gen_server:call(snake_server, {change_dir, Snake#snake.id, Dir0}),
+	    io:format("Dir2: ~p ~p ~p\n", [Dir0,Dir, {hd(Path), Next}]),
+	    ok
+    end,
+
+    case gen_server:call(snake_server, {move, Snake#snake.id}) of
+	game_over ->
+	    game_over;
+	Snake2 = #snake{} ->
+	    Snake2#snake{}
+    end.
+
+get_dir({_X1,Y1},{_X2,Y2}) when Y1 < Y2 -> up;
+get_dir({X1,_Y1},{X2,_Y2}) when X1 < X2 -> left;
+get_dir({X1,_Y1},{X2,_Y2}) when X1 > X2 -> right;
+get_dir({_X1,Y1},{_X2,Y2}) when Y1 > Y2 -> down.
+
 
 test() ->
     test({7,5}).
@@ -124,7 +160,7 @@ find_path(Snake = #snake{head = Head, tail = Tail}, #map{walls = Walls, food = F
     UnavalibleTiles = lists:append([Head,
 				    Tail,
 				    Walls]),
-    find_path([#tile{pos = hd(Food)}], get_head(Snake), UnavalibleTiles).
+    find_path([#tile{pos = hd(Food)}], snake_server:get_head(Snake), UnavalibleTiles).
 
 
 find_path([Pos = #tile{pos = {X,Y},num = _N}|_Rest], {X,Y}, _UnavalibleTiles) ->

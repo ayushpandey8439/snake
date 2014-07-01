@@ -23,7 +23,7 @@
 	 terminate/2, code_change/3, handle_event/2]).
 
 
--record(settings, {show_grid = true, ai, size = {10,10}}).
+-record(settings, {show_grid = true, ai, size = {30,30}}).
 
 -record(state, {frame,
 		canvas,
@@ -246,9 +246,10 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 	    disconnect(State#state.node, State#state.snake),
 	    {Snake, Map, Path} = gen_server:call(snake_ai, start),
 	    MoveTimer = erlang:send_after(Snake#snake.speed,
-					  self(), ai_move),
+	    				  self(), ai_move),
 	    
-	    gen_server:cast(self(), {speed, 500}),
+	    %% gen_server:cast(self(), {speed, 500}),
+	    %% gen_server:cast(snake_ai, {speed, 500}),
 	    {noreply, State#state{snake = Snake,
 				  map = Map,
 				  move_timer = MoveTimer,
@@ -301,7 +302,9 @@ handle_info(move, State = #state{snake = Snake}) ->
 	    case file:consult("highscore.txt") of
 		{ok, [{highscore, Highscore}]} ->
 		    if Snake#snake.score > Highscore ->
-			    file:write_file("highscore.txt", io_lib:format("{highscore,~p}.", [Snake#snake.score]));
+			    file:write_file("highscore.txt",
+					    io_lib:format("{highscore,~p}.",
+							  [Snake#snake.score]));
 		       true ->
 			    io:format("~p\nHighscore: ~p\n", [Message,Highscore])
 		    end;
@@ -321,11 +324,23 @@ handle_info(move, State = #state{snake = Snake}) ->
 	    {noreply, State#state{snake = Snake2,
 				  move_timer = MoveTimer}}
     end;
-handle_info(ai_move, State = #state{snake = Snake}) ->
-    io:format("AI move\n", []),
-    MoveTimer = erlang:send_after(Snake#snake.speed,
-				  self(), ai_move),
-    {noreply, State#state{move_timer = MoveTimer}};
+handle_info(ai_move, State = #state{snake = Snake, settings = Settings}) ->
+    %%io:format("AI move\n", []),
+    case gen_server:call(snake_ai, move) of
+	game_over ->
+	    ScoreString = integer_to_list(Snake#snake.score),
+	    Message = "Game Over! Score: " ++ ScoreString,
+    	    Dialog = wxMessageDialog:new(State#state.frame,
+    					 Message, []),
+    	    wxMessageDialog:showModal(Dialog),
+	    {noreply, State#state{}};
+	{Snake2 = #snake{}, Path} ->
+	    MoveTimer = erlang:send_after(Snake#snake.speed,
+					  self(), ai_move),
+	    {noreply, State#state{snake = Snake2,
+				  settings = Settings#settings{ai = Path},
+				  move_timer = MoveTimer}}
+    end;
 handle_info(Msg, State) ->
     io:format("Unhandled message: ~p\n", [Msg]),
     {noreply, State}.
