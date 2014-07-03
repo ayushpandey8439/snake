@@ -50,13 +50,13 @@ handle_call(start, From, State) ->
 			       gui = element(1, From),
 			       path = Path}};
 handle_call(move, _From, State = #state{snake = Snake, map = Map, path = []}) ->
-    io:format("Path empty. ~p\n", [Map#map.food]),
+    %%io:format("Path empty. Food: ~p\n", [Map#map.food]),
     Path = find_path(Snake, Map),
     case move(Snake, Path) of
 	game_over ->
 	    {reply, game_over, State#state{}};
 	Snake2 = #snake{} ->
-	    {reply, {Snake2, Path}, State#state{snake = Snake2, path = Path}}
+	    {reply, {Snake2, tl(Path)}, State#state{snake = Snake2, path = tl(Path)}}
     end;
 handle_call(move, _From, State = #state{snake = Snake, path = Path}) ->
     case move(Snake, Path) of
@@ -76,11 +76,9 @@ handle_call(Request, _From, State) ->
 
 
 handle_cast({remove_food, Food}, State = #state{map = Map}) ->
-    io:format("Eat: ~p\n", [Food]),
     gen_server:cast(State#state.gui, {remove_food, Food}),
     {noreply, State#state{map = Map#map{food = lists:delete(Food)}}};
 handle_cast({spawn_food, Food}, State = #state{map = Map}) ->
-    io:format("Eat2: ~p\n", [Food]),
     gen_server:cast(State#state.gui, {spawn_food, Food}),
     {noreply, State#state{map = Map#map{food = Food}}};
 handle_cast({score, Score}, State = #state{snake = Snake}) ->
@@ -113,28 +111,21 @@ get_food(Map) ->
     #tile{pos = {X,Y}, num = 0}.
 
 move(Snake, Path) ->
-    Next = snake_server:calculate_next(Snake),
-    if hd(Path) == Next ->
-	    Dir = Snake#snake.direction,
-	    io:format("Dir: ~p\n", [Dir]);
-       true ->
-	    Dir0 = get_dir(hd(Path), Next),
-	    Dir = gen_server:call(snake_server, {change_dir, Snake#snake.id, Dir0}),
-	    io:format("Dir2: ~p ~p ~p\n", [Dir0,Dir, {hd(Path), Next}]),
-	    ok
+    Head = snake_server:get_head(Snake),
+    Dir = get_dir(hd(Path), Head),
+    %%io:format("Dir: ~p, ~p\n", [Dir, {hd(Path), Head}]),
+    case Dir == Snake#snake.direction of
+	false ->
+	    gen_server:call(snake_server, {change_dir, Snake#snake.id, Dir});
+	true -> ok
     end,
+    gen_server:call(snake_server, {move, Snake#snake.id}).
 
-    case gen_server:call(snake_server, {move, Snake#snake.id}) of
-	game_over ->
-	    game_over;
-	Snake2 = #snake{} ->
-	    Snake2#snake{}
-    end.
-
-get_dir({_X1,Y1},{_X2,Y2}) when Y1 < Y2 -> up;
-get_dir({X1,_Y1},{X2,_Y2}) when X1 < X2 -> left;
-get_dir({X1,_Y1},{X2,_Y2}) when X1 > X2 -> right;
-get_dir({_X1,Y1},{_X2,Y2}) when Y1 > Y2 -> down.
+get_dir({X,Y1}, {X,Y2}) when Y1 > Y2 -> down;
+get_dir({X,Y1}, {X,Y2}) when Y1 < Y2 -> up;
+get_dir({X1,Y}, {X2,Y}) when X1 > X2 -> right;
+get_dir({X1,Y}, {X2,Y}) when X1 < X2 -> left.
+	    
 
 
 test() ->

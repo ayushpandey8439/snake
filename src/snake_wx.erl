@@ -6,7 +6,7 @@
 %%% @end
 %%% Created :  26 Jul 2013 by  <olle@zubat>
 %%%-------------------------------------------------------------------
--module(snake_gui).
+-module(snake_wx).
 
 -behaviour(wx_object).
 -include_lib("wx/include/wx.hrl").
@@ -64,7 +64,7 @@ init([Node]) ->
     PrefMenu  = wxMenu:new([]),
     wxMenuItem:check(wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Show grid", []), [{check,true}]),
     wxMenu:appendSeparator(PrefMenu),
-    wxMenu:append(PrefMenu, ?wxID_ANY, "Start AI", []),
+    wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Demo", []),
     wxMenu:connect(PrefMenu, command_menu_selected),
 
     
@@ -241,19 +241,25 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 	"Show grid" ->
 	    Checked = wxMenuItem:isChecked(wxMenu:findItem(Obj, Id)),
 	    {noreply, State#state{settings = Settings#settings{show_grid = Checked}}};
-	"Start AI" ->
-	    io:format("Start AI.\n"),
-	    disconnect(State#state.node, State#state.snake),
-	    {Snake, Map, Path} = gen_server:call(snake_ai, start),
-	    MoveTimer = erlang:send_after(Snake#snake.speed,
-	    				  self(), ai_move),
-	    
-	    %% gen_server:cast(self(), {speed, 500}),
-	    %% gen_server:cast(snake_ai, {speed, 500}),
-	    {noreply, State#state{snake = Snake,
-				  map = Map,
-				  move_timer = MoveTimer,
-				  settings = Settings#settings{ai = Path}}};
+	"Demo" ->
+	    case wxMenuItem:isChecked(wxMenu:findItem(Obj, Id)) of
+		true ->
+		    io:format("Start AI.\n"),
+		    disconnect(State#state.node, State#state.snake),
+		    {Snake, Map, Path} = gen_server:call(snake_ai, start),
+		    MoveTimer = erlang:send_after(Snake#snake.speed,
+						  self(), ai_move),
+		    
+		    %% gen_server:cast(self(), {speed, 500}),
+		    %% gen_server:cast(snake_ai, {speed, 500}),
+		    {noreply, State#state{snake = Snake,
+					  map = Map,
+					  move_timer = MoveTimer,
+					  settings = Settings#settings{ai = Path}}};
+		false ->
+		    {noreply, State#state{move_timer = stop_timer(State#state.move_timer),
+					  settings = Settings#settings{ai = undefined}}}
+	    end;
 	Label ->
 	    io:format("Label: ~p\n", [Label]),
 	    {noreply, State}
@@ -310,7 +316,7 @@ handle_info(move, State = #state{snake = Snake}) ->
 		    end;
 		_ ->
 		    io:format("~s\n", [Message])
-		    
+
 	    end,
 
     	    Dialog = wxMessageDialog:new(State#state.frame,
@@ -326,14 +332,17 @@ handle_info(move, State = #state{snake = Snake}) ->
     end;
 handle_info(ai_move, State = #state{snake = Snake, settings = Settings}) ->
     %%io:format("AI move\n", []),
-    case gen_server:call(snake_ai, move) of
+    case gen_server:call(snake_ai, move, infinity) of
 	game_over ->
-	    ScoreString = integer_to_list(Snake#snake.score),
-	    Message = "Game Over! Score: " ++ ScoreString,
-    	    Dialog = wxMessageDialog:new(State#state.frame,
-    					 Message, []),
-    	    wxMessageDialog:showModal(Dialog),
-	    {noreply, State#state{}};
+	    io:format("Game over. Score: ~p\n", [Snake#snake.score]),
+	    {Snake2, Map, Path} = gen_server:call(snake_ai, start),
+	    MoveTimer = erlang:send_after(Snake2#snake.speed,
+					  self(), ai_move),
+
+	    {noreply, State#state{snake = Snake2,
+				  map = Map,
+				  move_timer = MoveTimer,
+				  settings = Settings#settings{ai = Path}}};
 	{Snake2 = #snake{}, Path} ->
 	    MoveTimer = erlang:send_after(Snake#snake.speed,
 					  self(), ai_move),
@@ -419,7 +428,8 @@ draw(State=#state{snake = Snake, map = Map,
 	undefined ->
 	    ok;
 	Path ->
-	    draw_ai(Path, BlockSize)
+	    %%draw_path(Path, BlockSize),
+	    ok
     end,
     wxGLCanvas:swapBuffers(State#state.canvas).
     
@@ -467,7 +477,7 @@ draw_grid({Width, Height}) ->
 
     ok.
 
-draw_ai(List, {Width,Height}) ->
+draw_path(List, {Width,Height}) ->
     gl:color4ub(0,0,255,100),
     Fun = fun({X,Y}) ->
 		     graphics:rectangle(X*Width,Y*Height,Width,Height)

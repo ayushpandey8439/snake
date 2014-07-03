@@ -146,10 +146,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-get_head(Snake) ->
-    case Snake#snake.head of
-	[] -> lists:last(Snake#snake.tail);
-	_  -> hd(Snake#snake.head)
+get_head(#snake{head = Head, tail = Tail}) ->
+    case Head of
+	[] -> lists:last(Tail);
+	_  -> hd(Head)
     end.
 
 
