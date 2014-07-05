@@ -1,0 +1,4 @@
+%% TODO List
+
+* snake_ai:find_path/2 has to return if there is no avalible path
+
