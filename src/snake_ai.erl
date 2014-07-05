@@ -46,7 +46,7 @@ init([]) ->
     {ok, #state{}}.
 
 handle_call(start, From, State) ->
-    {Snake, Map} = gen_server:call(snake_server, {new_game, {30,30}}),
+    {Snake, Map} = snake_server:call({new_game, {30,30}}),
     Path = find_path(Snake, Map),
     Reply = {Snake, Map, Path},
     {reply, Reply, State#state{snake = Snake,
@@ -120,10 +120,10 @@ move(Snake, Path) ->
     %%io:format("Dir: ~p, ~p\n", [Dir, {hd(Path), Head}]),
     case Dir == Snake#snake.direction of
 	false ->
-	    gen_server:call(snake_server, {change_dir, Snake#snake.id, Dir});
+	    snake_server:call({change_dir, Snake#snake.id, Dir});
 	true -> ok
     end,
-    gen_server:call(snake_server, {move, Snake#snake.id}).
+    snake_server:call({move, Snake#snake.id}).
 
 get_dir({X,Y1}, {X,Y2}) when Y1 > Y2 -> down;
 get_dir({X,Y1}, {X,Y2}) when Y1 < Y2 -> up;
