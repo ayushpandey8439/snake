@@ -33,7 +33,7 @@
 %%%===================================================================
 
 call(Msg) ->
-    gen_server:call(?SERVER, Msg).
+    gen_server:call(?SERVER, Msg, infinity).
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
