@@ -2,4 +2,4 @@
 *.beam
 erl_crash.dump
 highscore.txt
-
+.edts
