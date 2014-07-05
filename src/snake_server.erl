@@ -13,7 +13,8 @@
 
 
 %% API
--export([start/0,start_link/0, outer_walls/1, calculate_next/1,get_head/1]).
+-export([start/0, start_link/0, outer_walls/1, calculate_next/1,
+	 get_head/1, call/1, call/2, is_wall/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -27,6 +28,12 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+call(Msg) ->
+    gen_server:call(?SERVER, Msg, infinity).
+
+call(Node, Msg) ->
+    gen_server:call({?SERVER, Node}, Msg, infinity).
 
 start() ->
     gen_server:start({local, ?SERVER}, ?MODULE, [], []).
@@ -106,8 +113,12 @@ handle_call({change_dir, SnakeId, Dir}, _From, State) ->
 		 false ->
 		     Next = calculate_next(Snake),
 		     case get_head(Snake) of
-			 Next -> Snake#snake.direction;
-			 _ -> Dir
+			 Next ->
+			     io:format("Dir1: ~p\n", [Snake#snake.direction]),
+			     Snake#snake.direction;
+			 Head ->
+			     io:format("Dir2: ~p ~p\n", [Dir, {Next, Head}]),
+			     Dir
 		     end
 	     end,
     Snake2 = Snake#snake{direction = NewDir},
@@ -221,7 +232,7 @@ outer_walls(MapWidth, MapHeight,{X, Y}, Acc) ->
 
 new_game(Size, NumFood) ->
     Map = new_map(Size),
-    Snake = #snake{},
+    Snake = new_snake(),
     Food = spawn_food(Size, lists:append([Snake#snake.head,
 					  Snake#snake.tail,
 					  Map#map.walls]), NumFood),
@@ -231,4 +242,10 @@ new_map(Size) when is_tuple(Size) ->
     #map{size = Size,
 	 walls = outer_walls(Size),
 	 food = []}.
+
+new_snake() ->
+    #snake{}.
+
+is_wall(Pos, UnavalibleTiles) ->
+    lists:member(Pos, UnavalibleTiles).
 
