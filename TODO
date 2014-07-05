@@ -2,3 +2,4 @@
 
 * snake_ai:find_path/2 has to return if there is no avalible path
 * Get it working on Win and Mac, i have no such machines atm
+* Fix new_snake/0 to generate random snake
