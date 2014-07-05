@@ -45,9 +45,9 @@ start() ->
     start(snake_server).
 
 start(snake_server) ->
-    wx_object:start(?MODULE, [snake_server], []);
+    wx_object:start(?MODULE, [node()], []);
 start(Node) ->
-    wx_object:start(?MODULE, [{snake_server, Node}], []).
+    wx_object:start(?MODULE, [Node], []).
 
 start_link() ->
     wx_object:start_link(?MODULE, [], []).
@@ -67,7 +67,7 @@ init([Node]) ->
     wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Demo", []),
     wxMenu:connect(PrefMenu, command_menu_selected),
 
-    
+
 
     wxMenu:append(File, ?wxID_PREFERENCES, "&Preferences", PrefMenu, []),
 
@@ -81,7 +81,7 @@ init([Node]) ->
     wxMenuBar:append(MB, Help, "&Help"),
     wxFrame:setMenuBar(Frame,MB),
 
-    wxFrame:createStatusBar(Frame, [{number, 2}]),
+    wxFrame:createStatusBar(Frame, [{number, 3}]),
 
     wxFrame:centreOnScreen(Frame),
     wxFrame:show(Frame),
@@ -100,7 +100,7 @@ init([Node]) ->
     %% Sizer = wxBoxSizer:new(?wxHORIZONTAL),
     %% wxSizer:add(Sizer, Canvas, [{proportion, 1},{flag, ?wxEXPAND}]),
     %% wxPanel:setSizer(Panel,Sizer),
-    
+
     wxFrame:connect(Canvas, key_down),
     wxFrame:connect(Frame, close_window, [{skip,true}]),
     wxFrame:connect(Frame, command_menu_selected),
@@ -123,19 +123,22 @@ init([Node]) ->
 
     wxFrame:setStatusText(Frame, "Score: 0", [{number, 0}]),
     wxFrame:setStatusText(Frame, "Speed: 100", [{number, 1}]),
- 
+    wxFrame:setStatusText(Frame, "Highscore: "++ integer_to_list(Highscore), [{number, 2}]),
+
     {FrameW,FrameH} = wxFrame:getVirtualSize(Frame),
     wxGLCanvas:setSize(Canvas, FrameW, FrameH),
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
 
-    %%{Snake, Map} = gen_server:call(Node, {new_game, {10,10}}),
-    BlockWidth	= W div ?MAP_WIDTH,
-    BlockHeight = H div ?MAP_HEIGHT,
+    Settings = #settings{},
+    {MapWidth, MapHeight} = Size = Settings#settings.size,
+    {Snake, Map} = snake_server:call(Node, {new_game, Size}),
+    BlockWidth	= W div MapWidth,
+    BlockHeight = H div MapHeight,
 
     State = #state{frame = Frame, canvas = Canvas,
-		   %%snake = Snake,
-		   %%map = Map,
+		   snake = Snake,
+		   map = Map,
 		   block_size = {BlockWidth,BlockHeight},
 		   node = Node},
     draw(State),
@@ -154,9 +157,9 @@ handle_event(#wx{event = #wxKey{type = key_down,
 				keyCode = Code}},
 	     State=#state{snake = Snake})
   when Code >= 314, Code =< 317 ->
-    Dir = gen_server:call(State#state.node, {change_dir,
-				  Snake#snake.id,
-				  code_to_dir(Code)}),
+    Dir = snake_server:call(State#state.node, {change_dir,
+					       Snake#snake.id,
+					       code_to_dir(Code)}),
     %%io:format("Dir: ~p\n", [Dir]),
     {noreply, State#state{snake = Snake#snake{direction = Dir}}};
 
@@ -196,15 +199,15 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $C}}, State = #state{
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}},
 	     State = #state{settings = Settings}) ->
     disconnect(State#state.node, State#state.snake),
-    {Snake, Map} = gen_server:call(State#state.node,
-				   {new_game, Settings#settings.size}),
+    {Snake, Map} = snake_server:call(State#state.node,
+				     {new_game, Settings#settings.size}),
     case Settings#settings.ai of
 	undefined ->
 	    Path = undefined;
 	_ ->
-	    Path = gen_server:call(snake_ai, {find_path,
-					      Snake,
-					      Map})
+	    Path = snake_ai:call({find_path,
+				  Snake,
+				  Map})
     end,
     {noreply, State#state{map = Map, snake = Snake,
 			  settings = Settings#settings{ai = Path},
@@ -227,7 +230,7 @@ handle_event(#wx{obj = Frame, event = #wxCommand{type = command_menu_selected},
     case Id of
     	?wxID_NEW ->
 	    disconnect(State#state.node, State#state.snake),
- 	    {Snake, Map} = gen_server:call(State#state.node, {new_game, {30,30}}),
+ 	    {Snake, Map} = snake_server:call(State#state.node, {new_game, {30,30}}),
 	    {noreply, State#state{map = Map, snake = Snake}};
     	?wxID_EXIT ->
 	    {stop, shutdown, State};
@@ -246,10 +249,10 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 		true ->
 		    io:format("Start AI.\n"),
 		    disconnect(State#state.node, State#state.snake),
-		    {Snake, Map, Path} = gen_server:call(snake_ai, start),
+		    {Snake, Map, Path} = snake_ai:call(start),
 		    MoveTimer = erlang:send_after(Snake#snake.speed,
 						  self(), ai_move),
-		    
+
 		    %% gen_server:cast(self(), {speed, 500}),
 		    %% gen_server:cast(snake_ai, {speed, 500}),
 		    {noreply, State#state{snake = Snake,
@@ -278,7 +281,7 @@ handle_call(Request, _From, State) ->
     {noreply, State}.
 
 handle_cast({remove_food, Food}, State = #state{map = Map}) ->
-    {noreply, State#state{map = Map#map{food = lists:delete(Food)}}};
+    {noreply, State#state{map = Map#map{food = lists:delete(Food, Map#map.food)}}};
 handle_cast({spawn_food, Food}, State = #state{map = Map}) ->
     {noreply, State#state{map = Map#map{food = Food}}};
 handle_cast({score, Score}, State = #state{snake = Snake}) ->
@@ -301,7 +304,7 @@ handle_info(update, State) ->
     erlang:send_after(50, self(), update),
     {noreply, State#state{}};
 handle_info(move, State = #state{snake = Snake}) ->
-    case gen_server:call(State#state.node, {move, Snake#snake.id}) of
+    case snake_server:call(State#state.node, {move, Snake#snake.id}) of
 	game_over ->
 	    ScoreString = integer_to_list(Snake#snake.score),
 	    Message = "Game Over! Score: " ++ ScoreString,
@@ -332,10 +335,10 @@ handle_info(move, State = #state{snake = Snake}) ->
     end;
 handle_info(ai_move, State = #state{snake = Snake, settings = Settings}) ->
     %%io:format("AI move\n", []),
-    case gen_server:call(snake_ai, move, infinity) of
+    case snake_ai:call(move) of
 	game_over ->
 	    io:format("Game over. Score: ~p\n", [Snake#snake.score]),
-	    {Snake2, Map, Path} = gen_server:call(snake_ai, start),
+	    {Snake2, Map, Path} = snake_ai:call(start),
 	    MoveTimer = erlang:send_after(Snake2#snake.speed,
 					  self(), ai_move),
 
@@ -428,7 +431,7 @@ draw(State=#state{snake = Snake, map = Map,
 	undefined ->
 	    ok;
 	Path ->
-	    %%draw_path(Path, BlockSize),
+	    draw_path(Path, BlockSize),
 	    ok
     end,
     wxGLCanvas:swapBuffers(State#state.canvas).
@@ -489,7 +492,6 @@ draw_path(List, {Width,Height}) ->
     ok.
 
 
-    
 
 
 
