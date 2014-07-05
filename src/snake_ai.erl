@@ -16,6 +16,7 @@
 %% API
 -export([start_link/0]).
 -export([test/0,test/1, find_path/2]).
+-export([call/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -30,6 +31,9 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+call(Msg) ->
+    gen_server:call(?SERVER, Msg).
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -77,7 +81,7 @@ handle_call(Request, _From, State) ->
 
 handle_cast({remove_food, Food}, State = #state{map = Map}) ->
     gen_server:cast(State#state.gui, {remove_food, Food}),
-    {noreply, State#state{map = Map#map{food = lists:delete(Food)}}};
+    {noreply, State#state{map = Map#map{food = lists:delete(Food, Map#map.food)}}};
 handle_cast({spawn_food, Food}, State = #state{map = Map}) ->
     gen_server:cast(State#state.gui, {spawn_food, Food}),
     {noreply, State#state{map = Map#map{food = Food}}};
@@ -158,7 +162,7 @@ find_path([Pos = #tile{pos = {X,Y},num = _N}|_Rest], {X,Y}, _UnavalibleTiles) ->
     %%io:format("Rest: ~p\n", [_Rest]),
     to_list(Pos#tile.parent);
 find_path([Tile | Rest], Goal, UnavalibleTiles) ->
-    case is_wall(Tile, UnavalibleTiles) of
+    case snake_server:is_wall(Tile, UnavalibleTiles) of
 	false ->
 	    Fun = fun(T, A) ->
 			  case lists:keymember(T#tile.pos, #tile.pos, Rest) of
@@ -183,9 +187,6 @@ nearby_tiles(Tile = #tile{pos = {X,Y}, num = Num}) ->
      #tile{pos = {X-1,Y}, num = Num+1, parent = Tile},
      #tile{pos = {X,Y+1}, num = Num+1, parent = Tile},
      #tile{pos = {X,Y-1}, num = Num+1, parent = Tile}].
-
-is_wall(#tile{pos = Pos}, UnavalibleTiles) ->
-    lists:member(Pos, UnavalibleTiles).
 
 
 to_list(Tile) ->
