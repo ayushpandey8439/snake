@@ -76,7 +76,7 @@ handle_call({move, SnakeId}, From, State = #state{map = Map}) ->
 				    {score, Snake1#snake.score}),
 
 		    if Snake1#snake.score rem 5  == 0 ->
-			    Speed = max(Snake1#snake.speed - 10, 5),
+			    Speed = max(Snake1#snake.speed - 5, 50),
 			    Snake2 = Snake1#snake{speed = Speed},
 			    gen_server:cast(element(1,From),
 					    {speed, Speed});
@@ -111,14 +111,11 @@ handle_call({change_dir, SnakeId, Dir}, _From, State) ->
 		 true ->
 		     Snake#snake.direction;
 		 false ->
-		     Next = calculate_next(Snake),
-		     case get_head(Snake) of
-			 Next ->
-			     io:format("Dir1: ~p\n", [Snake#snake.direction]),
-			     Snake#snake.direction;
-			 Head ->
-			     io:format("Dir2: ~p ~p\n", [Dir, {Next, Head}]),
-			     Dir
+		     Next = calculate_next(Snake#snake{direction = Dir}),
+		     case lists:member(Next, lists:append(Snake#snake.head,
+							  Snake#snake.tail)) of
+			 true  -> Snake#snake.direction;
+			 false -> Dir
 		     end
 	     end,
     Snake2 = Snake#snake{direction = NewDir},
@@ -162,7 +159,6 @@ get_head(#snake{head = Head, tail = Tail}) ->
 	[] -> lists:last(Tail);
 	_  -> hd(Head)
     end.
-
 
 opposite_dir(left) -> right;
 opposite_dir(right) -> left;
