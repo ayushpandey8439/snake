@@ -65,9 +65,11 @@ init([Node]) ->
     wxMenu:append(File, ?wxID_NEW, "&New Game"),
     wxMenu:appendSeparator(File),
     PrefMenu  = wxMenu:new([]),
-    wxMenuItem:check(wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Show grid", []), [{check,true}]),
+    wxMenuItem:check(wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Show grid", []),
+		     [{check,true}]),
     wxMenu:appendSeparator(PrefMenu),
-    wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Demo", []),
+    wxMenuItem:check(wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Demo", []),
+		     [{check,true}]),
     wxMenu:connect(PrefMenu, command_menu_selected),
 
 
@@ -133,15 +135,21 @@ init([Node]) ->
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
 
-    Settings = #settings{},
-    {MapWidth, MapHeight} = Size = Settings#settings.size,
-    {Snake, Map} = snake_server:call(Node, {new_game, Size}),
+    {Snake, Map, Path} = snake_ai:call(start),
+    Settings = #settings{ai = {Path, false}},
+    {MapWidth, MapHeight} = Settings#settings.size,
     BlockWidth	= W div MapWidth,
     BlockHeight = H div MapHeight,
+
+    MoveTimer = erlang:send_after(Snake#snake.speed,
+				  self(), ai_move),
+
 
     State = #state{frame = Frame, canvas = Canvas,
 		   snake = Snake,
 		   map = Map,
+		   settings = Settings,
+		   move_timer = MoveTimer,
 		   block_size = {BlockWidth,BlockHeight},
 		   node = Node},
     draw(State),
@@ -261,7 +269,7 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 		    {noreply, State#state{snake = Snake,
 					  map = Map,
 					  move_timer = MoveTimer,
-					  settings = Settings#settings{ai = Path}}};
+					  settings = Settings#settings{ai = {Path, false}}}};
 		false ->
 		    {noreply, State#state{move_timer = stop_timer(State#state.move_timer),
 					  settings = Settings#settings{ai = undefined}}}
@@ -348,12 +356,12 @@ handle_info(ai_move, State = #state{snake = Snake, settings = Settings}) ->
 	    {noreply, State#state{snake = Snake2,
 				  map = Map,
 				  move_timer = MoveTimer,
-				  settings = Settings#settings{ai = Path}}};
+				  settings = Settings#settings{ai = {Path,false}}}};
 	{Snake2 = #snake{}, Path} ->
 	    MoveTimer = erlang:send_after(Snake#snake.speed,
 					  self(), ai_move),
 	    {noreply, State#state{snake = Snake2,
-				  settings = Settings#settings{ai = Path},
+				  settings = Settings#settings{ai = {Path,false}},
 				  move_timer = MoveTimer}}
     end;
 handle_info(Msg, State) ->
@@ -426,15 +434,16 @@ draw(State=#state{snake = Snake, map = Map,
     draw_snake(Snake, BlockSize),
     case Settings#settings.show_grid of
 	true ->
-	    draw_grid(BlockSize);
+	    draw_grid(BlockSize, Map#map.size);
 	false ->
 	    ok
     end,
     case Settings#settings.ai of
 	undefined ->
 	    ok;
-	Path ->
-	    draw_path(Path, BlockSize),
+	{Path, true} ->
+	    draw_path(Path, BlockSize);
+	{_Path, false} ->
 	    ok
     end,
     wxGLCanvas:swapBuffers(State#state.canvas).
@@ -471,14 +480,14 @@ draw_snake(#snake{head = Head, tail = Tail}, {Width,Height}) ->
     ok.
 
 
-draw_grid({Width, Height}) ->
+draw_grid({Width, Height}, {MapWidth, MapHeight}) ->
     gl:color4ub(0,0,0,50),
     
-    FunX = fun(PosX) -> graphics:line({PosX*Width, 0}, {PosX*Width, ?MAP_HEIGHT*Height}) end,
-    FunY = fun(PosY) -> graphics:line({0, PosY*Height}, {?MAP_WIDTH*Width, PosY*Height}) end,
+    FunX = fun(PosX) -> graphics:line({PosX*Width, 0}, {PosX*Width, MapHeight*Height}) end,
+    FunY = fun(PosY) -> graphics:line({0, PosY*Height}, {MapWidth*Width, PosY*Height}) end,
     gl:'begin'(?GL_LINES),
-    wx:foreach(FunX, lists:seq(0,?MAP_WIDTH)),
-    wx:foreach(FunY, lists:seq(0,?MAP_HEIGHT)),
+    wx:foreach(FunX, lists:seq(0,MapWidth)),
+    wx:foreach(FunY, lists:seq(0,MapHeight)),
     gl:'end'(),
 
     ok.
