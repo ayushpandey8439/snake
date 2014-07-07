@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
-%%% @author  <olle@zubat.bahnhof.net>
+%%% @author  <ollematts@gmail.com>
 %%% @copyright (C) 2014, 
 %%% @doc
 %%%
 %%% @end
-%%% Created : 27 May 2014 by  <olle@zubat.bahnhof.net>
+%%% Created : 27 May 2014 by  <olle@zubat>
 %%%-------------------------------------------------------------------
 
 -record(snake, {id,
