@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
-%%% @author  <olle@zubat>
-%%% @copyright (C) 2013, 
+%%% @author  <ollemattss@gmail.com>
+%%% @copyright (C) 2013-2014, 
 %%% @doc
 %%%
 %%% @end

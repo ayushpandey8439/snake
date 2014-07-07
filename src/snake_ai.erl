@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
-%%% @author  <olle@zubat.rymdis>
+%%% @author  <ollemattss@gmail.com>
 %%% @copyright (C) 2014, 
 %%% @doc
 %%%
 %%% @end
-%%% Created : 15 Jun 2014 by  <olle@zubat.rymdis>
+%%% Created : 15 Jun 2014 by  <olle@zubat>
 %%%-------------------------------------------------------------------
 -module(snake_ai).
 
