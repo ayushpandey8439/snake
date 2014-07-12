@@ -57,6 +57,7 @@ start_link() ->
 %%%===================================================================
 
 init([Node]) ->
+    process_flag(trap_exit, true),
     wx:new(),
     Frame = wxFrame:new(wx:null(), ?wxID_ANY, "Snake", [{size, {800,600}}]),
 
@@ -117,14 +118,13 @@ init([Node]) ->
     erlang:send_after(50, self(), update),
 
     case file:consult("highscore.txt") of
-	{ok, [{highscore, Highscore}]} ->
-	    io:format("Highscore: ~p\n", [Highscore]);	
-	{error, enoent} ->
+	{ok, [{highscore, Highscore}]} -> ok;
+	_ ->
 	    Highscore = 0,
 	    file:write_file("highscore.txt", io_lib:format("{highscore,~p}.",
-							   [Highscore])),
-	    io:format("Highscore: ~p\n", [Highscore])	
+							   [Highscore]))
     end,
+    io:format("Highscore: ~p\n", [Highscore]),
 
     wxFrame:setStatusText(Frame, "Score: 0", [{number, 0}]),
     wxFrame:setStatusText(Frame, "Speed: 100", [{number, 1}]),
@@ -166,7 +166,7 @@ handle_event(#wx{event = #wxSize{size={W,H}}}, State = #state{}) ->
 %%% Change direction
 handle_event(#wx{event = #wxKey{type = key_down,
 				keyCode = Code}},
-	     State=#state{snake = Snake})
+	     State=#state{snake = Snake, settings = #settings{ai = undefined}})
   when Code >= 314, Code =< 317 ->
     Dir = snake_server:call(State#state.node, {change_dir,
 					       Snake#snake.id,
@@ -212,16 +212,8 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}},
     disconnect(State#state.node, State#state.snake),
     {Snake, Map} = snake_server:call(State#state.node,
 				     {new_game, Settings#settings.size}),
-    case Settings#settings.ai of
-	undefined ->
-	    Path = undefined;
-	_ ->
-	    Path = snake_ai:call({find_path,
-				  Snake,
-				  Map})
-    end,
     {noreply, State#state{map = Map, snake = Snake,
-			  settings = Settings#settings{ai = Path},
+			  settings = Settings#settings{ai = undefined},
 			  move_timer = stop_timer(State#state.move_timer)}};
 
 %%% Other key
@@ -264,8 +256,6 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 		    MoveTimer = erlang:send_after(Snake#snake.speed,
 						  self(), ai_move),
 
-		    %% gen_server:cast(self(), {speed, 500}),
-		    %% gen_server:cast(snake_ai, {speed, 500}),
 		    {noreply, State#state{snake = Snake,
 					  map = Map,
 					  move_timer = MoveTimer,
@@ -324,7 +314,9 @@ handle_info(move, State = #state{snake = Snake}) ->
 		    if Snake#snake.score > Highscore ->
 			    file:write_file("highscore.txt",
 					    io_lib:format("{highscore,~p}.",
-							  [Snake#snake.score]));
+							  [Snake#snake.score])),
+			    wxFrame:setStatusText(State#state.frame, "Highscore: "++ integer_to_list(Snake#snake.score), [{number, 2}]);
+
 		       true ->
 			    io:format("~p\nHighscore: ~p\n", [Message,Highscore])
 		    end;
@@ -434,7 +426,7 @@ draw(State=#state{snake = Snake, map = Map,
     draw_snake(Snake, BlockSize),
     case Settings#settings.show_grid of
 	true ->
-	    draw_grid(BlockSize, Map#map.size);
+	    draw_grid(BlockSize, Map);
 	false ->
 	    ok
     end,
@@ -480,7 +472,9 @@ draw_snake(#snake{head = Head, tail = Tail}, {Width,Height}) ->
     ok.
 
 
-draw_grid({Width, Height}, {MapWidth, MapHeight}) ->
+draw_grid(_, undefined) ->
+    ok;
+draw_grid({Width, Height}, #map{size = {MapWidth, MapHeight}}) ->
     gl:color4ub(0,0,0,50),
     
     FunX = fun(PosX) -> graphics:line({PosX*Width, 0}, {PosX*Width, MapHeight*Height}) end,

@@ -22,7 +22,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {map, snakes = [], last_id = 0}).
+-record(state, {maps = [], snakes = [], last_id = 0}).
 %%-record(settings, {}).
 
 %%%===================================================================
@@ -49,8 +49,9 @@ init([]) ->
     random:seed(now()),
     {ok, #state{}}.
 
-handle_call({move, SnakeId}, From, State = #state{map = Map}) ->
+handle_call({move, SnakeId}, From, State = #state{}) ->
     Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
+    Map = lists:keyfind(SnakeId, #map.id, State#state.maps),
     Next = calculate_next(Snake),
     case lists:member(Next, lists:append([Snake#snake.head,
 					  Snake#snake.tail,
@@ -88,7 +89,9 @@ handle_call({move, SnakeId}, From, State = #state{map = Map}) ->
 	    end,
 	    Snakes = lists:keystore(Snake2#snake.id, #snake.id,
 				    State#state.snakes, Snake2),
-	    {reply, Snake2, State#state{map = Map2,
+	    Maps = lists:keystore(Map2#map.id, #map.id,
+				    State#state.maps, Map2),
+	    {reply, Snake2, State#state{maps = Maps,
 					snakes = Snakes}};
 	true ->
 	    Snakes = lists:keydelete(SnakeId, #snake.id, State#state.snakes),
@@ -97,8 +100,9 @@ handle_call({move, SnakeId}, From, State = #state{map = Map}) ->
 handle_call({new_game,Size}, _From, State=#state{last_id = LastId}) ->
     {Snake, Map} = new_game(Size, 1),
     Snake2 = Snake#snake{id = LastId},
-    {reply, {Snake2, Map#map{}},
-     State#state{map = Map,
+    Map2 = Map#map{id = LastId},
+    {reply, {Snake2, Map2},
+     State#state{maps = [Map2|State#state.maps],
 		 snakes = [Snake2|State#state.snakes],
 		 last_id = LastId+1}};
 handle_call({eat, SnakeId}, _From, State) ->
@@ -128,12 +132,11 @@ handle_call(Request, _From, State) ->
     io:format("Unhandled call: ~p\n", [Request]),
     {noreply, State}.
 
-handle_cast({shit, Pos}, State = #state{map = Map}) ->
-    {noreply, State#state{map = Map#map{walls = [Pos|Map#map.walls]}}};
 handle_cast({disconnect, Id}, State) ->
     Snakes = lists:keydelete(Id, #snake.id, State#state.snakes),
-    io:format("Snakes: ~p\n", [Snakes]),
-    {noreply, State#state{snakes = Snakes}};
+    Maps = lists:keydelete(Id, #snake.id, State#state.maps),
+    {noreply, State#state{snakes = Snakes,
+			  maps = Maps}};
 handle_cast(stop, State) ->
     {stop, shutdown, State};
 handle_cast(Msg, State) ->
