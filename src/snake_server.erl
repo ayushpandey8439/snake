@@ -236,7 +236,7 @@ outer_walls(MapWidth, MapHeight,{X, Y}, Acc) ->
 
 new_game(Size, NumFood) ->
     Map = new_map(Size),
-    Snake = new_snake(),
+    Snake = new_snake(Size, Map#map.walls),
     Food = spawn_food(Size, lists:append([Snake#snake.head,
 					  Snake#snake.tail,
 					  Map#map.walls]), NumFood),
@@ -247,8 +247,14 @@ new_map(Size) when is_tuple(Size) ->
 	 walls = outer_walls(Size),
 	 food = []}.
 
-new_snake() ->
-    #snake{}.
+new_snake({Width, Height}, UnavalibleTiles) ->
+    random:seed(now()),
+    Pos = {random:uniform(Width)-1,
+	   random:uniform(Height)-1},
+    case lists:member(Pos, UnavalibleTiles) of
+	false -> #snake{tail = [Pos]};
+	true -> new_snake({Width, Height}, UnavalibleTiles)
+    end.
 
 is_wall(Pos, UnavalibleTiles) ->
     lists:member(Pos, UnavalibleTiles).
