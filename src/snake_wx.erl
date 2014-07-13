@@ -276,7 +276,7 @@ handle_cast({speed, Speed}, State = #state{snake = Snake}) ->
     SpeedText = io_lib:format("Speed: ~p", [Speed]),
     wxFrame:setStatusText(State#state.frame, SpeedText, [{number, 1}]),
     {noreply, State#state{snake = Snake#snake{speed = Speed}}};
-handle_cast(game_over, State = #state{snake = Snake}) ->
+handle_cast(game_over, State = #state{settings = Settings, snake = Snake}) ->
     ScoreString = integer_to_list(Snake#snake.score),
     Message = "Game Over! Score: " ++ ScoreString,
     case file:consult("highscore.txt") of
@@ -296,7 +296,8 @@ handle_cast(game_over, State = #state{snake = Snake}) ->
     end,
     Dialog = wxMessageDialog:new(State#state.frame, Message, []),
     wxMessageDialog:showModal(Dialog),
-    {noreply, State#state{snake = undefined, map = undefined}};
+    {Snake2, Map} = snake_server:call({new_game, Settings#settings.size}),
+    {noreply, State#state{snake = Snake2, map = Map}};
 handle_cast({move, Snake}, State = #state{}) ->
     {noreply, State#state{snake = Snake}};
 handle_cast(Msg, State) ->

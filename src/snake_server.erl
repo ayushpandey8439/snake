@@ -195,6 +195,13 @@ move(Snake = #snake{head = Head, tail = Tail}, Map) ->
 				     tail = tl(Tail)};
 		true ->
 		    Score = Snake#snake.score +1,
+		    if Score rem 5 == 0 ->
+			    Speed = max(Snake#snake.speed-5, 20),
+			    gen_server:cast(Snake#snake.pid,
+					    {speed, Speed});
+		       true ->
+			    Speed = Snake#snake.speed
+		    end,
 		    gen_server:cast(Snake#snake.pid, {score, Score}),
 		    {spawn_food(Map#map.size,
 				lists:append([Head, Tail,
@@ -202,6 +209,7 @@ move(Snake = #snake{head = Head, tail = Tail}, Map) ->
 					      Map#map.walls,
 					      [Next]])),
 		     Snake#snake{score = Score,
+				 speed = Speed,
 				 head = [Next|Head]}}
 	    end;
 	true ->
