@@ -36,6 +36,8 @@
 
 -define(MOVE_TIME, 100).
 
+-define(ID_CONNECT, 500).
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -64,13 +66,13 @@ init([Node]) ->
     MB = wxMenuBar:new(),
     File    = wxMenu:new([]),
     wxMenu:append(File, ?wxID_NEW, "&New Game"),
+    wxMenu:append(File, ?ID_CONNECT, "Connect"),
     wxMenu:appendSeparator(File),
     PrefMenu  = wxMenu:new([]),
     wxMenuItem:check(wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Show grid", []),
 		     [{check,true}]),
     wxMenu:appendSeparator(PrefMenu),
-    wxMenuItem:check(wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Demo", []),
-		     [{check,true}]),
+    wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Demo", []),
     wxMenu:connect(PrefMenu, command_menu_selected),
 
 
@@ -135,32 +137,27 @@ init([Node]) ->
     {W,H} = wxGLCanvas:getSize(Canvas),
     gl_resize(W,H),
 
-    {Snake, Map, Path} = snake_ai:call(start),
-    Settings = #settings{ai = {Path, false}},
-    {MapWidth, MapHeight} = Settings#settings.size,
+    Size = {30,30},
+    {Snake, Map} = snake_server:call({new_game, Size}),
+    {MapWidth, MapHeight} = Size,
     BlockWidth	= W div MapWidth,
     BlockHeight = H div MapHeight,
-
-    MoveTimer = erlang:send_after(Snake#snake.speed,
-				  self(), ai_move),
-
 
     State = #state{frame = Frame, canvas = Canvas,
 		   snake = Snake,
 		   map = Map,
-		   settings = Settings,
-		   move_timer = MoveTimer,
 		   block_size = {BlockWidth,BlockHeight},
 		   node = Node},
     draw(State),
     {Frame, State}.
 
 %%% Resize
-handle_event(#wx{event = #wxSize{size={W,H}}}, State = #state{}) ->
+handle_event(#wx{event = #wxSize{size={W,H}}},
+	     State = #state{map = #map{size = {MapW,MapH}}}) ->
     %%io:format("Canvas Size: w.~p h.~p\n", [W,H]),
     gl_resize(W,H),
-    BlockWidth	= W div ?MAP_WIDTH,
-    BlockHeight = H div ?MAP_HEIGHT,
+    BlockWidth	= W div MapW,
+    BlockHeight = H div MapH,
     {noreply, State#state{block_size = {BlockWidth, BlockHeight}}};
 
 %%% Change direction
@@ -174,26 +171,12 @@ handle_event(#wx{event = #wxKey{type = key_down,
     %%io:format("Dir: ~p\n", [Dir]),
     {noreply, State#state{snake = Snake#snake{direction = Dir}}};
 
-%%% Shit
-handle_event(#wx{event = #wxKey{type = key_down, keyCode = $P}},
-	     State= #state{snake = Snake, map = Map}) ->
-    _Pos = case Snake#snake.tail of
-	       [] -> lists:last(Snake#snake.head);
-	       _ -> hd(Snake#snake.tail)
-	   end,
-    %%cast(State#state.node, {shit, Pos}),
-    {noreply, State#state{map = Map#map{}}};
-
+%%% Pause
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = 32}},
-	     State= #state{settings = Settings, snake = Snake}) ->
-    case Settings#settings.ai of
-	false ->
-	    {noreply, State#state{move_timer = toggle_timer(State#state.move_timer,
-							    Snake#snake.speed)}};
-	_ ->
-	    {noreply, State#state{move_timer = toggle_timer(State#state.move_timer,
-							    Snake#snake.speed)}}
-    end;
+	     State = #state{snake = Snake}) ->
+    gen_server:cast(snake_server, {pause, Snake#snake.id}),
+    io:format("Space\n"),
+    {noreply, State#state{}};
 
 %%% Quit client
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
@@ -213,8 +196,7 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}},
     {Snake, Map} = snake_server:call(State#state.node,
 				     {new_game, Settings#settings.size}),
     {noreply, State#state{map = Map, snake = Snake,
-			  settings = Settings#settings{ai = undefined},
-			  move_timer = stop_timer(State#state.move_timer)}};
+			  settings = Settings#settings{ai = undefined}}};
 
 %%% Other key
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = Code}}, State) ->
@@ -237,6 +219,8 @@ handle_event(#wx{obj = Frame, event = #wxCommand{type = command_menu_selected},
 	    {noreply, State#state{map = Map, snake = Snake}};
     	?wxID_EXIT ->
 	    {stop, shutdown, State};
+	?ID_CONNECT ->
+	    {noreply, State};
 	_ ->
 	    {noreply, State}
     end;
@@ -261,8 +245,7 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 					  move_timer = MoveTimer,
 					  settings = Settings#settings{ai = {Path, false}}}};
 		false ->
-		    {noreply, State#state{move_timer = stop_timer(State#state.move_timer),
-					  settings = Settings#settings{ai = undefined}}}
+		    {noreply, State#state{settings = Settings#settings{ai = undefined}}}
 	    end;
 	Label ->
 	    io:format("Label: ~p\n", [Label]),
@@ -293,6 +276,29 @@ handle_cast({speed, Speed}, State = #state{snake = Snake}) ->
     SpeedText = io_lib:format("Speed: ~p", [Speed]),
     wxFrame:setStatusText(State#state.frame, SpeedText, [{number, 1}]),
     {noreply, State#state{snake = Snake#snake{speed = Speed}}};
+handle_cast(game_over, State = #state{snake = Snake}) ->
+    ScoreString = integer_to_list(Snake#snake.score),
+    Message = "Game Over! Score: " ++ ScoreString,
+    case file:consult("highscore.txt") of
+	{ok, [{highscore, Highscore}]} ->
+	    if Snake#snake.score > Highscore ->
+		    file:write_file("highscore.txt",
+				    io_lib:format("{highscore,~p}.",
+						  [Snake#snake.score])),
+		    wxFrame:setStatusText(State#state.frame, "Highscore: "++
+					      ScoreString, [{number, 2}]);
+
+	       true ->
+		    io:format("~p\nHighscore: ~p\n", [Message,Highscore])
+	    end;
+	_ ->
+	    io:format("~s\n", [Message])
+    end,
+    Dialog = wxMessageDialog:new(State#state.frame, Message, []),
+    wxMessageDialog:showModal(Dialog),
+    {noreply, State#state{snake = undefined, map = undefined}};
+handle_cast({move, Snake}, State = #state{}) ->
+    {noreply, State#state{snake = Snake}};
 handle_cast(Msg, State) ->
     io:format("~p: UnHandled cast: ~p\n", [?MODULE,Msg]),
     {noreply, State}.
@@ -304,40 +310,7 @@ handle_info(update, State) ->
     draw(State),
     erlang:send_after(50, self(), update),
     {noreply, State#state{}};
-handle_info(move, State = #state{snake = Snake}) ->
-    case snake_server:call(State#state.node, {move, Snake#snake.id}) of
-	game_over ->
-	    ScoreString = integer_to_list(Snake#snake.score),
-	    Message = "Game Over! Score: " ++ ScoreString,
-	    case file:consult("highscore.txt") of
-		{ok, [{highscore, Highscore}]} ->
-		    if Snake#snake.score > Highscore ->
-			    file:write_file("highscore.txt",
-					    io_lib:format("{highscore,~p}.",
-							  [Snake#snake.score])),
-			    wxFrame:setStatusText(State#state.frame, "Highscore: "++ integer_to_list(Snake#snake.score), [{number, 2}]);
-
-		       true ->
-			    io:format("~p\nHighscore: ~p\n", [Message,Highscore])
-		    end;
-		_ ->
-		    io:format("~s\n", [Message])
-
-	    end,
-
-    	    Dialog = wxMessageDialog:new(State#state.frame,
-    					 Message, []),
-    	    wxMessageDialog:showModal(Dialog),
-
-    	    {noreply, State#state{}};
-	Snake2 = #snake{} ->
-	    MoveTimer = erlang:send_after(Snake2#snake.speed,
-					  self(), move),
-	    {noreply, State#state{snake = Snake2,
-				  move_timer = MoveTimer}}
-    end;
 handle_info(ai_move, State = #state{snake = Snake, settings = Settings}) ->
-    %%io:format("AI move\n", []),
     case snake_ai:call(move) of
 	game_over ->
 	    io:format("Game over. Score: ~p\n", [Snake#snake.score]),
@@ -426,7 +399,7 @@ draw(State=#state{snake = Snake, map = Map,
     draw_snake(Snake, BlockSize),
     case Settings#settings.show_grid of
 	true ->
-	    draw_grid(BlockSize, Map);
+	    draw_grid(Map, BlockSize);
 	false ->
 	    ok
     end,
@@ -472,9 +445,9 @@ draw_snake(#snake{head = Head, tail = Tail}, {Width,Height}) ->
     ok.
 
 
-draw_grid(_, undefined) ->
+draw_grid(undefined, _) ->
     ok;
-draw_grid({Width, Height}, #map{size = {MapWidth, MapHeight}}) ->
+draw_grid(#map{size = {MapWidth, MapHeight}}, {Width, Height}) ->
     gl:color4ub(0,0,0,50),
     
     FunX = fun(PosX) -> graphics:line({PosX*Width, 0}, {PosX*Width, MapHeight*Height}) end,
@@ -499,27 +472,4 @@ draw_path(List, {Width,Height}) ->
 
 
 
-
-
-stop_timer(Timer) ->
-    case Timer of
-	undefined ->  ok;
-	Timer	  ->  erlang:cancel_timer(Timer)
-    end,
-    undefined.
-
-start_timer(Timer, Speed) ->
-    case Timer of
-	undefined ->  erlang:send_after(Speed, self(), move);
-	Timer	  ->  Timer
-    end.
-    
-toggle_timer(Timer, Speed) ->
-    case Timer of
-	undefined -> start_timer(Timer, Speed);
-	Timer	  -> stop_timer(Timer)
-    end.
-
-
-
-    
+  

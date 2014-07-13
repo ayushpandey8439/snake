@@ -9,6 +9,8 @@
 
 -record(snake, {id,
 		direction = right,
+		move_timer,
+		pid,
 		speed = 100,
 		head = [],
 		tail = [{4,7}, {4,6}, {4,5}],

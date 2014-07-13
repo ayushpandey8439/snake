@@ -49,66 +49,14 @@ init([]) ->
     random:seed(now()),
     {ok, #state{}}.
 
-handle_call({move, SnakeId}, From, State = #state{}) ->
-    Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
-    Map = lists:keyfind(SnakeId, #map.id, State#state.maps),
-    Next = calculate_next(Snake),
-    case lists:member(Next, lists:append([Snake#snake.head,
-					  Snake#snake.tail,
-					  Map#map.walls])) of
-	false ->
-	    case lists:member(Next, Map#map.food) of
-		true ->
-		    Food = lists:delete(Next, Map#map.food),
-		    Food2 = spawn_food(Map#map.size,
-				       lists:append([Snake#snake.head,
-						     Snake#snake.tail,
-						     Map#map.walls,
-						     [Next]])),
-		    Food3 = lists:append(Food, Food2),
-		    gen_server:cast(element(1,From),
-				    {spawn_food, Food3}),
-
-		    Map2 = Map#map{food = Food3},
-
-		    Snake1 = move(eat(Snake)),
-
-		    gen_server:cast(element(1,From),
-				    {score, Snake1#snake.score}),
-
-		    if Snake1#snake.score rem 5  == 0 ->
-			    Speed = max(Snake1#snake.speed - 5, 50),
-			    Snake2 = Snake1#snake{speed = Speed},
-			    gen_server:cast(element(1,From),
-					    {speed, Speed});
-		       true -> Snake2 = Snake1
-		    end;
-		false ->
-		    Snake2 = move(Snake),
-		    Map2 = Map
-	    end,
-	    Snakes = lists:keystore(Snake2#snake.id, #snake.id,
-				    State#state.snakes, Snake2),
-	    Maps = lists:keystore(Map2#map.id, #map.id,
-				    State#state.maps, Map2),
-	    {reply, Snake2, State#state{maps = Maps,
-					snakes = Snakes}};
-	true ->
-	    Snakes = lists:keydelete(SnakeId, #snake.id, State#state.snakes),
-	    {reply, game_over, State#state{snakes = Snakes}}
-    end;
-handle_call({new_game,Size}, _From, State=#state{last_id = LastId}) ->
+handle_call({new_game,Size}, From, State=#state{last_id = LastId}) ->
     {Snake, Map} = new_game(Size, 1),
-    Snake2 = Snake#snake{id = LastId},
+    Snake2 = Snake#snake{id = LastId, pid = element(1, From)},
     Map2 = Map#map{id = LastId},
     {reply, {Snake2, Map2},
      State#state{maps = [Map2|State#state.maps],
 		 snakes = [Snake2|State#state.snakes],
 		 last_id = LastId+1}};
-handle_call({eat, SnakeId}, _From, State) ->
-    Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
-    Reply = eat(Snake),
-    {reply, Reply, State};
 handle_call({change_dir, SnakeId, Dir}, _From, State) ->
     Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
     NewDir = case Snake#snake.direction == opposite_dir(Dir) of
@@ -132,16 +80,55 @@ handle_call(Request, _From, State) ->
     io:format("Unhandled call: ~p\n", [Request]),
     {noreply, State}.
 
+
+%%% handle_cast
 handle_cast({disconnect, Id}, State) ->
+    Snake = lists:keyfind(Id, #snake.id, State#state.snakes),
+    stop_timer(Snake#snake.move_timer),
     Snakes = lists:keydelete(Id, #snake.id, State#state.snakes),
     Maps = lists:keydelete(Id, #snake.id, State#state.maps),
     {noreply, State#state{snakes = Snakes,
 			  maps = Maps}};
+handle_cast({pause,SnakeId}, State) ->
+    Snake = lists:keyfind(SnakeId, #snake.id, State#state.snakes),
+    Timer = toggle_timer(Snake#snake.move_timer, Snake#snake.speed, SnakeId),
+    Snakes = lists:keystore(SnakeId, #snake.id, State#state.snakes,
+			    Snake#snake{move_timer = Timer}),
+    {noreply, State#state{snakes = Snakes}};
 handle_cast(stop, State) ->
     {stop, shutdown, State};
 handle_cast(Msg, State) ->
     io:format("Unhandled cast: ~p\n", [Msg]),
     {noreply, State}.
+
+handle_info({move, SnakeId}, State) ->
+    Snake = #snake{speed = Speed} = lists:keyfind(SnakeId,
+						  #snake.id,
+						  State#state.snakes),
+    Map = #map{} = lists:keyfind(SnakeId, #map.id, State#state.maps),
+    Timer = start_timer(undefined, Speed, SnakeId),
+    case move(Snake, Map) of
+	game_over ->
+	    gen_server:cast(Snake#snake.pid, game_over),
+	    Snakes = lists:keydelete(SnakeId, #snake.id, State#state.snakes),
+	    Maps = lists:keydelete(Map#map.id, #map.id, State#state.maps),
+	    stop_timer(Timer),
+	    {noreply, State#state{snakes = Snakes,
+				  maps = Maps}};
+	Snake2 = #snake{} ->
+	    Snakes = lists:keystore(SnakeId, #snake.id, State#state.snakes,
+				    Snake2#snake{move_timer = Timer}),
+	    gen_server:cast(Snake#snake.pid, {move, Snake2}),
+	    {noreply, State#state{snakes = Snakes}};
+	{Food, Snake2} ->
+	    Snakes = lists:keystore(SnakeId, #snake.id, State#state.snakes,
+				    Snake2#snake{move_timer = Timer}),
+	    Maps = lists:keystore(SnakeId, #map.id, State#state.maps,
+				  Map#map{food = Food}),
+	    gen_server:cast(Snake#snake.pid, {spawn_food, Food}),
+	    {noreply, State#state{snakes = Snakes,
+				  maps = Maps}}
+    end;
 
 handle_info(Info, State) ->
     io:format("Unhandled info: ~p\n", [Info]),
@@ -195,21 +182,31 @@ spawn_food(Size = {Width, Height}, UnavalibleTiles, Num, Acc) ->
 
 
 
-move(Snake = #snake{tail = []}) ->
-    move(Snake#snake{head = [], tail = lists:reverse(Snake#snake.head)});
-move(Snake = #snake{head = Head, tail = Tail}) ->
+move(Snake = #snake{tail = []}, Map) ->
+    move(Snake#snake{head = [], tail = lists:reverse(Snake#snake.head)}, Map);
+move(Snake = #snake{head = Head, tail = Tail}, Map) ->
     Next = calculate_next(Snake),
-    Snake#snake{food = max(Snake#snake.food-1, 0),
-		head = [Next|Head], tail = if Snake#snake.food > 0 -> Tail;
-					      true -> tl(Tail)
-					   end}.
-
-eat(Snake) ->
-    eat(Snake, 1).
-
-eat(Snake, Num) when Num > 0 ->
-    Snake#snake{food = Snake#snake.food+Num, score = Snake#snake.score + Num}.
-
+    case lists:member(Next, lists:append([Head,
+					  Tail,
+					  Map#map.walls])) of
+	false ->
+	    case lists:member(Next, Map#map.food) of
+	    	false -> Snake#snake{head = [Next|Head],
+				     tail = tl(Tail)};
+		true ->
+		    Score = Snake#snake.score +1,
+		    gen_server:cast(Snake#snake.pid, {score, Score}),
+		    {spawn_food(Map#map.size,
+				lists:append([Head, Tail,
+					      lists:delete(Next, Map#map.food),
+					      Map#map.walls,
+					      [Next]])),
+		     Snake#snake{score = Score,
+				 head = [Next|Head]}}
+	    end;
+	true ->
+	    game_over
+    end.
 
 
 outer_walls({MapWidth, MapHeight}) ->
@@ -247,4 +244,24 @@ new_snake() ->
 
 is_wall(Pos, UnavalibleTiles) ->
     lists:member(Pos, UnavalibleTiles).
+
+
+stop_timer(Timer) ->
+    case Timer of
+	undefined ->  ok;
+	Timer	  ->  erlang:cancel_timer(Timer)
+    end,
+    undefined.
+
+start_timer(Timer, Speed, SnakeId) ->
+    case Timer of
+	undefined ->  erlang:send_after(Speed, snake_server, {move, SnakeId});
+	Timer	  ->  Timer
+    end.
+    
+toggle_timer(Timer, Speed, SnakeId) ->
+    case Timer of
+	undefined -> start_timer(Timer, Speed, SnakeId);
+	Timer	  -> stop_timer(Timer)
+    end.
 
