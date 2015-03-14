@@ -67,7 +67,7 @@ init([]) ->
 	       Restart, Shutdown, Type, [snake_ai]},
 
     SnakeWX = {snake_wx, {snake_wx, start_link, []},
-	       Restart, Shutdown, Type, []},
+	       temporary, Shutdown, Type, []},
 
     {ok, {SupFlags, [SnakeServer,SnakeAI,SnakeWX]}}.
 
