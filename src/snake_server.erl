@@ -14,7 +14,7 @@
 
 %% API
 -export([start/0, start_link/0, outer_walls/1, calculate_next/1,
-	 get_head/1, call/1, call/2, is_wall/2]).
+	 get_head/1, call/1, is_wall/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -31,9 +31,6 @@
 
 call(Msg) ->
     gen_server:call(?SERVER, Msg, infinity).
-
-call(Node, Msg) ->
-    gen_server:call({?SERVER, Node}, Msg, infinity).
 
 start() ->
     gen_server:start({local, ?SERVER}, ?MODULE, [], []).
@@ -195,13 +192,6 @@ move(Snake = #snake{head = Head, tail = Tail}, Map) ->
 				     tail = tl(Tail)};
 		true ->
 		    Score = Snake#snake.score +1,
-		    if Score rem 5 == 0 ->
-			    Speed = max(Snake#snake.speed-5, 20),
-			    gen_server:cast(Snake#snake.pid,
-					    {speed, Speed});
-		       true ->
-			    Speed = Snake#snake.speed
-		    end,
 		    gen_server:cast(Snake#snake.pid, {score, Score}),
 		    {spawn_food(Map#map.size,
 				lists:append([Head, Tail,
@@ -209,7 +199,6 @@ move(Snake = #snake{head = Head, tail = Tail}, Map) ->
 					      Map#map.walls,
 					      [Next]])),
 		     Snake#snake{score = Score,
-				 speed = Speed,
 				 head = [Next|Head]}}
 	    end;
 	true ->
@@ -236,7 +225,7 @@ outer_walls(MapWidth, MapHeight,{X, Y}, Acc) ->
 
 new_game(Size, NumFood) ->
     Map = new_map(Size),
-    Snake = new_snake(Size, Map#map.walls),
+    Snake = new_snake(),
     Food = spawn_food(Size, lists:append([Snake#snake.head,
 					  Snake#snake.tail,
 					  Map#map.walls]), NumFood),
@@ -247,14 +236,8 @@ new_map(Size) when is_tuple(Size) ->
 	 walls = outer_walls(Size),
 	 food = []}.
 
-new_snake({Width, Height}, UnavalibleTiles) ->
-    random:seed(now()),
-    Pos = {random:uniform(Width)-1,
-	   random:uniform(Height)-1},
-    case lists:member(Pos, UnavalibleTiles) of
-	false -> #snake{tail = [Pos]};
-	true -> new_snake({Width, Height}, UnavalibleTiles)
-    end.
+new_snake() ->
+    #snake{}.
 
 is_wall(Pos, UnavalibleTiles) ->
     lists:member(Pos, UnavalibleTiles).

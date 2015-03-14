@@ -16,7 +16,7 @@
 -include("snake.hrl").
 
 %% API
--export([start/0,start/1,start_link/0]).
+-export([start/0,start_link/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -44,22 +44,17 @@
 
 
 start() ->
-    start(snake_server).
-
-start(snake_server) ->
-    wx_object:start(?MODULE, [node()], []);
-start(Node) ->
-    wx_object:start(?MODULE, [Node], []).
+    {ok, wx_object:get_pid(wx_object:start(?MODULE, [], []))}.
 
 start_link() ->
-    wx_object:start_link(?MODULE, [], []).
+    {ok, wx_object:get_pid(wx_object:start_link(?MODULE, [], []))}.
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
-init([Node]) ->
-    process_flag(trap_exit, true),
+init([]) ->
+    %%process_flag(trap_exit, true),
     wx:new(),
     Frame = wxFrame:new(wx:null(), ?wxID_ANY, "Snake", [{size, {800,600}}]),
 
@@ -146,8 +141,7 @@ init([Node]) ->
     State = #state{frame = Frame, canvas = Canvas,
 		   snake = Snake,
 		   map = Map,
-		   block_size = {BlockWidth,BlockHeight},
-		   node = Node},
+		   block_size = {BlockWidth,BlockHeight}},
     draw(State),
     {Frame, State}.
 
@@ -165,9 +159,9 @@ handle_event(#wx{event = #wxKey{type = key_down,
 				keyCode = Code}},
 	     State=#state{snake = Snake, settings = #settings{ai = undefined}})
   when Code >= 314, Code =< 317 ->
-    Dir = snake_server:call(State#state.node, {change_dir,
-					       Snake#snake.id,
-					       code_to_dir(Code)}),
+    Dir = snake_server:call({change_dir,
+                             Snake#snake.id,
+                             code_to_dir(Code)}),
     %%io:format("Dir: ~p\n", [Dir]),
     {noreply, State#state{snake = Snake#snake{direction = Dir}}};
 
@@ -184,7 +178,7 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
 
 %%% Clear client
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $C}}, State = #state{settings = Settings}) ->
-    disconnect(State#state.node, State#state.snake),
+    %%disconnect(State#state.node, State#state.snake),
     {noreply, State#state{map = undefined,
 			  snake = undefined,
 			  settings = Settings#settings{ai = undefined}}};
@@ -192,9 +186,8 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $C}}, State = #state{
 %%% Restart
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}},
 	     State = #state{settings = Settings}) ->
-    disconnect(State#state.node, State#state.snake),
-    {Snake, Map} = snake_server:call(State#state.node,
-				     {new_game, Settings#settings.size}),
+    %%disconnect(State#state.node, State#state.snake),
+    {Snake, Map} = snake_server:call({new_game, Settings#settings.size}),
     {noreply, State#state{map = Map, snake = Snake,
 			  settings = Settings#settings{ai = undefined}}};
 
@@ -214,8 +207,8 @@ handle_event(#wx{obj = Frame, event = #wxCommand{type = command_menu_selected},
     %%io:format("Command menu ID: ~p\n", [Id]),
     case Id of
     	?wxID_NEW ->
-	    disconnect(State#state.node, State#state.snake),
- 	    {Snake, Map} = snake_server:call(State#state.node, {new_game, {30,30}}),
+	    %%disconnect(State#state.node, State#state.snake),
+ 	    {Snake, Map} = snake_server:call({new_game, {30,30}}),
 	    {noreply, State#state{map = Map, snake = Snake}};
     	?wxID_EXIT ->
 	    {stop, shutdown, State};
@@ -235,7 +228,7 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 	    case wxMenuItem:isChecked(wxMenu:findItem(Obj, Id)) of
 		true ->
 		    io:format("Start AI.\n"),
-		    disconnect(State#state.node, State#state.snake),
+		    %%disconnect(State#state.node, State#state.snake),
 		    {Snake, Map, Path} = snake_ai:call(start),
 		    MoveTimer = erlang:send_after(Snake#snake.speed,
 						  self(), ai_move),
@@ -276,7 +269,7 @@ handle_cast({speed, Speed}, State = #state{snake = Snake}) ->
     SpeedText = io_lib:format("Speed: ~p", [Speed]),
     wxFrame:setStatusText(State#state.frame, SpeedText, [{number, 1}]),
     {noreply, State#state{snake = Snake#snake{speed = Speed}}};
-handle_cast(game_over, State = #state{settings = Settings, snake = Snake}) ->
+handle_cast(game_over, State = #state{snake = Snake}) ->
     ScoreString = integer_to_list(Snake#snake.score),
     Message = "Game Over! Score: " ++ ScoreString,
     case file:consult("highscore.txt") of
@@ -296,8 +289,7 @@ handle_cast(game_over, State = #state{settings = Settings, snake = Snake}) ->
     end,
     Dialog = wxMessageDialog:new(State#state.frame, Message, []),
     wxMessageDialog:showModal(Dialog),
-    {Snake2, Map} = snake_server:call({new_game, Settings#settings.size}),
-    {noreply, State#state{snake = Snake2, map = Map}};
+    {noreply, State#state{snake = undefined, map = undefined}};
 handle_cast({move, Snake}, State = #state{}) ->
     {noreply, State#state{snake = Snake}};
 handle_cast(Msg, State) ->
@@ -341,7 +333,8 @@ terminate(_Reason, State) ->
 	undefined ->
 	    ok;
 	Snake ->
-	    disconnect(State#state.node, Snake)
+	    %%disconnect(State#state.node, Snake)
+            ok
     end,
     wx:destroy(),
     ok.
