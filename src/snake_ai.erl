@@ -91,6 +91,8 @@ handle_cast({score, Score}, State = #state{snake = Snake}) ->
 handle_cast({speed, Speed}, State = #state{snake = Snake}) ->
     gen_server:cast(State#state.gui, {speed, Speed}),
     {noreply, State#state{snake = Snake#snake{speed = Speed}}};
+handle_cast(stop, State) ->
+    {stop, shutdown, State};
 handle_cast(Msg, State) ->
     io:format("~p: UnHandled cast: ~p\n", [?MODULE,Msg]),
     {noreply, State}.

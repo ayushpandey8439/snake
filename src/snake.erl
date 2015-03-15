@@ -12,7 +12,7 @@
 
 
 %% API
--export([start/0]).
+-export([start/0, stop/0]).
 
 %% Application callbacks
 -export([start/2, stop/1]).
@@ -24,6 +24,9 @@
 
 start() ->
     application:start(snake).
+
+stop() ->
+    application:stop(snake).
 
 %%%===================================================================
 %%% Application callbacks
@@ -59,7 +62,9 @@ start(_StartType, _StartArgs) ->
 %% @end
 %%--------------------------------------------------------------------
 stop(_State) ->
-    gen_server:call(snake_server, stop),
+    gen_server:cast(snake_server, stop),
+    gen_server:cast(snake_ai, stop),
+    gen_server:cast(snake_wx, stop),
     ok.
 
 %%%===================================================================

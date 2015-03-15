@@ -292,6 +292,8 @@ handle_cast(game_over, State = #state{snake = Snake}) ->
     {noreply, State#state{snake = undefined, map = undefined}};
 handle_cast({move, Snake}, State = #state{}) ->
     {noreply, State#state{snake = Snake}};
+handle_cast(stop, State) ->
+    {stop, shutdown, State};
 handle_cast(Msg, State) ->
     io:format("~p: UnHandled cast: ~p\n", [?MODULE,Msg]),
     {noreply, State}.
