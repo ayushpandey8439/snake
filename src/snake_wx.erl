@@ -414,7 +414,7 @@ draw_map(undefined, _) ->
     ok;
 draw_map(#map{food = Food, walls = Walls}, {Width, Height}) ->
     FunMap = fun({X,Y}) -> 
-		     graphics:rectangle(X*Width,Y*Height,Width,Height)
+		     snake_graphics:rectangle(X*Width,Y*Height,Width,Height)
 	     end,
     gl:'begin'(?GL_QUADS),
     gl:color4ub(0,255,0,50),
@@ -432,7 +432,7 @@ draw_snake(undefined, _) ->
 draw_snake(#snake{head = Head, tail = Tail}, {Width,Height}) ->
     gl:color4ub(255,0,255,50),
     Fun = fun({X,Y}) ->
-		     graphics:rectangle(X*Width,Y*Height,Width,Height)
+		     snake_graphics:rectangle(X*Width,Y*Height,Width,Height)
 	  end,
     gl:'begin'(?GL_QUADS),
     wx:foreach(Fun, Head++Tail),
@@ -446,8 +446,8 @@ draw_grid(undefined, _) ->
 draw_grid(#map{size = {MapWidth, MapHeight}}, {Width, Height}) ->
     gl:color4ub(0,0,0,50),
     
-    FunX = fun(PosX) -> graphics:line({PosX*Width, 0}, {PosX*Width, MapHeight*Height}) end,
-    FunY = fun(PosY) -> graphics:line({0, PosY*Height}, {MapWidth*Width, PosY*Height}) end,
+    FunX = fun(PosX) -> snake_graphics:line({PosX*Width, 0}, {PosX*Width, MapHeight*Height}) end,
+    FunY = fun(PosY) -> snake_graphics:line({0, PosY*Height}, {MapWidth*Width, PosY*Height}) end,
     gl:'begin'(?GL_LINES),
     wx:foreach(FunX, lists:seq(0,MapWidth)),
     wx:foreach(FunY, lists:seq(0,MapHeight)),
@@ -458,7 +458,7 @@ draw_grid(#map{size = {MapWidth, MapHeight}}, {Width, Height}) ->
 draw_path(List, {Width,Height}) ->
     gl:color4ub(0,0,255,100),
     Fun = fun({X,Y}) ->
-		     graphics:rectangle(X*Width,Y*Height,Width,Height)
+		     snake_graphics:rectangle(X*Width,Y*Height,Width,Height)
 	  end,
     gl:'begin'(?GL_QUADS),
     wx:foreach(Fun, List),

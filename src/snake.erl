@@ -62,9 +62,6 @@ start(_StartType, _StartArgs) ->
 %% @end
 %%--------------------------------------------------------------------
 stop(_State) ->
-    gen_server:cast(snake_server, stop),
-    gen_server:cast(snake_ai, stop),
-    gen_server:cast(snake_wx, stop),
     ok.
 
 %%%===================================================================

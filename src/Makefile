@@ -9,7 +9,7 @@ MODULES = \
 	snake_server \
 	snake_ai \
 	snake_supervisor \
-	graphics
+	snake_graphics
 
 
 INCLUDES =

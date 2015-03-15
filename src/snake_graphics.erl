@@ -6,7 +6,7 @@
 %%% @end
 %%% Created :  6 Jul 2013 by  <olle@zubat>
 %%%-------------------------------------------------------------------
--module(graphics).
+-module(snake_graphics).
 
 -include_lib("wx/include/wx.hrl").
 -include_lib("wx/include/gl.hrl").
