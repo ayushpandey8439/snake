@@ -63,13 +63,10 @@ init([]) ->
     SnakeServer = {snake_server, {snake_server, start_link, []},
 		   Restart, Shutdown, Type, [snake_server]},
 
-    SnakeAI = {snake_ai, {snake_ai, start_link, []},
-	       Restart, Shutdown, Type, [snake_ai]},
-
     SnakeWX = {snake_wx, {snake_wx, start_link, []},
 	       temporary, Shutdown, Type, []},
 
-    {ok, {SupFlags, [SnakeServer,SnakeAI,SnakeWX]}}.
+    {ok, {SupFlags, [SnakeServer,SnakeWX]}}.
 
 %%%===================================================================
 %%% Internal functions

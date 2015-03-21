@@ -23,7 +23,7 @@
 	 terminate/2, code_change/3, handle_event/2]).
 
 
--record(settings, {show_grid = true, ai, size = {30,30}}).
+-record(settings, {show_grid = true, size = {30,30}}).
 
 -record(state, {frame,
 		canvas,
@@ -36,7 +36,6 @@
 
 -define(MOVE_TIME, 100).
 
--define(ID_CONNECT, 500).
 
 %%%===================================================================
 %%% API
@@ -61,13 +60,10 @@ init([]) ->
     MB = wxMenuBar:new(),
     File    = wxMenu:new([]),
     wxMenu:append(File, ?wxID_NEW, "&New Game"),
-    wxMenu:append(File, ?ID_CONNECT, "Connect"),
     wxMenu:appendSeparator(File),
     PrefMenu  = wxMenu:new([]),
     wxMenuItem:check(wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Show grid", []),
 		     [{check,true}]),
-    wxMenu:appendSeparator(PrefMenu),
-    wxMenu:appendCheckItem(PrefMenu, ?wxID_ANY, "Demo", []),
     wxMenu:connect(PrefMenu, command_menu_selected),
 
 
@@ -157,7 +153,7 @@ handle_event(#wx{event = #wxSize{size={W,H}}},
 %%% Change direction
 handle_event(#wx{event = #wxKey{type = key_down,
 				keyCode = Code}},
-	     State=#state{snake = Snake, settings = #settings{ai = undefined}})
+	     State=#state{snake = Snake})
   when Code >= 314, Code =< 317 ->
     Dir = snake_server:call({change_dir,
                              Snake#snake.id,
@@ -178,18 +174,14 @@ handle_event(#wx{event = #wxKey{type = key_down, keyCode = $Q}}, State) ->
 
 %%% Clear client
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $C}}, State = #state{settings = Settings}) ->
-    %%disconnect(State#state.node, State#state.snake),
     {noreply, State#state{map = undefined,
-			  snake = undefined,
-			  settings = Settings#settings{ai = undefined}}};
+			  snake = undefined}};
 
 %%% Restart
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = $R}},
 	     State = #state{settings = Settings}) ->
-    %%disconnect(State#state.node, State#state.snake),
     {Snake, Map} = snake_server:call({new_game, Settings#settings.size}),
-    {noreply, State#state{map = Map, snake = Snake,
-			  settings = Settings#settings{ai = undefined}}};
+    {noreply, State#state{map = Map, snake = Snake}};
 
 %%% Other key
 handle_event(#wx{event = #wxKey{type = key_down, keyCode = Code}}, State) ->
@@ -207,13 +199,10 @@ handle_event(#wx{obj = Frame, event = #wxCommand{type = command_menu_selected},
     %%io:format("Command menu ID: ~p\n", [Id]),
     case Id of
     	?wxID_NEW ->
-	    %%disconnect(State#state.node, State#state.snake),
  	    {Snake, Map} = snake_server:call({new_game, {30,30}}),
 	    {noreply, State#state{map = Map, snake = Snake}};
     	?wxID_EXIT ->
 	    {stop, shutdown, State};
-	?ID_CONNECT ->
-	    {noreply, State};
 	_ ->
 	    {noreply, State}
     end;
@@ -224,22 +213,6 @@ handle_event(#wx{obj = Obj, event = #wxCommand{type = command_menu_selected},
 	"Show grid" ->
 	    Checked = wxMenuItem:isChecked(wxMenu:findItem(Obj, Id)),
 	    {noreply, State#state{settings = Settings#settings{show_grid = Checked}}};
-	"Demo" ->
-	    case wxMenuItem:isChecked(wxMenu:findItem(Obj, Id)) of
-		true ->
-		    io:format("Start AI.\n"),
-		    %%disconnect(State#state.node, State#state.snake),
-		    {Snake, Map, Path} = snake_ai:call(start),
-		    MoveTimer = erlang:send_after(Snake#snake.speed,
-						  self(), ai_move),
-
-		    {noreply, State#state{snake = Snake,
-					  map = Map,
-					  move_timer = MoveTimer,
-					  settings = Settings#settings{ai = {Path, false}}}};
-		false ->
-		    {noreply, State#state{settings = Settings#settings{ai = undefined}}}
-	    end;
 	Label ->
 	    io:format("Label: ~p\n", [Label]),
 	    {noreply, State}
@@ -305,25 +278,6 @@ handle_info(update, State) ->
     draw(State),
     erlang:send_after(50, self(), update),
     {noreply, State#state{}};
-handle_info(ai_move, State = #state{snake = Snake, settings = Settings}) ->
-    case snake_ai:call(move) of
-	game_over ->
-	    io:format("Game over. Score: ~p\n", [Snake#snake.score]),
-	    {Snake2, Map, Path} = snake_ai:call(start),
-	    MoveTimer = erlang:send_after(Snake2#snake.speed,
-					  self(), ai_move),
-
-	    {noreply, State#state{snake = Snake2,
-				  map = Map,
-				  move_timer = MoveTimer,
-				  settings = Settings#settings{ai = {Path,false}}}};
-	{Snake2 = #snake{}, Path} ->
-	    MoveTimer = erlang:send_after(Snake#snake.speed,
-					  self(), ai_move),
-	    {noreply, State#state{snake = Snake2,
-				  settings = Settings#settings{ai = {Path,false}},
-				  move_timer = MoveTimer}}
-    end;
 handle_info(Msg, State) ->
     io:format("Unhandled message: ~p\n", [Msg]),
     {noreply, State}.
@@ -331,13 +285,6 @@ handle_info(Msg, State) ->
 
 
 terminate(_Reason, State) ->
-    case State#state.snake of
-	undefined ->
-	    ok;
-	Snake ->
-	    %%disconnect(State#state.node, Snake)
-            ok
-    end,
     wx:destroy(),
     ok.
 
@@ -347,12 +294,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
-disconnect(_Node, undefined) ->
-    ok;
-disconnect(Node, Snake) ->
-    gen_server:cast(Node, {disconnect, Snake#snake.id}).
-
 
 code_to_dir(314) -> left;
 code_to_dir(315) -> up;
@@ -397,14 +338,6 @@ draw(State=#state{snake = Snake, map = Map,
 	true ->
 	    draw_grid(Map, BlockSize);
 	false ->
-	    ok
-    end,
-    case Settings#settings.ai of
-	undefined ->
-	    ok;
-	{Path, true} ->
-	    draw_path(Path, BlockSize);
-	{_Path, false} ->
 	    ok
     end,
     wxGLCanvas:swapBuffers(State#state.canvas).
