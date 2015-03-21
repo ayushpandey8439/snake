@@ -7,7 +7,6 @@ MODULES = \
 	snake \
 	snake_wx \
 	snake_server \
-	snake_ai \
 	snake_supervisor \
 	snake_graphics
 
